@@ -1,7 +1,0 @@
-name: probe-macos-15
-on: workflow_dispatch
-jobs:
-  hello:
-    runs-on: macos-15
-    steps:
-      - run: uname -a

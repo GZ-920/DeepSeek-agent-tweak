@@ -1,7 +1,0 @@
-name: probe-macos-14-large
-on: workflow_dispatch
-jobs:
-  hello:
-    runs-on: macos-14-large
-    steps:
-      - run: uname -a
