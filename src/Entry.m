@@ -61,7 +61,6 @@ void DSAEnsureEntry(UIView *view) {
         [line.trailingAnchor constraintEqualToAnchor:host.trailingAnchor constant:-16],
         [line.heightAnchor constraintEqualToConstant:0.5],
         [view.topAnchor constraintEqualToAnchor:line.bottomAnchor constant:2],
-        [(UIView *)view.widthAnchor constraintGreaterThanOrEqualToConstant:120],
     ]];
     objc_setAssociatedObject(view, &kDSAEntryTag, btn, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
