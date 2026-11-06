@@ -22,6 +22,15 @@ jobs:
           ls ~/theos | head
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
+      - name: Install ldid
+        run: |
+          set -e
+          brew install ldid 2>/dev/null || {
+            curl -L -o /tmp/ldid https://github.com/ProcursusTeam/ldid/releases/latest/download/ldid_macosx_arm64
+            chmod +x /tmp/ldid; sudo mv /tmp/ldid /usr/local/bin/ldid;
+          }
+          ldid -v || true
+
       - name: Build package
         run: |
           set -x
