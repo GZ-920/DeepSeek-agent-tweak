@@ -2,11 +2,9 @@
 //  Inject.m — 智能体首条设定提示词注入
 //
 #import <UIKit/UIKit.h>
+#import "DSAShared.h"
 #import "AgentStore.h"
 
-extern void DSAToast(NSString *text);
-extern UIWindow *DSAKeyWindow(void);
-extern UIViewController *DSATopMost(UIViewController *base);
 
 // sessionId -> 待发送提示词
 static NSMutableDictionary<NSString *, NSString *> *DSAPending(void) {

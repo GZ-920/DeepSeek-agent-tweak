@@ -6,9 +6,9 @@
 //    2. 广播 DSANewChatRequest 给可能的内部监听
 //
 #import <UIKit/UIKit.h>
+#import "DSAShared.h"
 #import "AgentStore.h"
 
-extern void DSAToast(NSString *text);
 
 void DSAOpenNewChatWithAgent(DSAAgent *agent) {
     if (!agent) return;

@@ -4,6 +4,7 @@
 //
 #import <UIKit/UIKit.h>
 #import "AgentStore.h"
+#import "DSAShared.h"
 
 @interface DSAAgentListController : UIViewController <UITableViewDataSource, UITableViewDelegate>
 + (UINavigationController *)presentedRoot;

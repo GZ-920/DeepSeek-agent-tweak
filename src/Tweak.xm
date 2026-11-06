@@ -4,8 +4,7 @@
 #import <UIKit/UIKit.h>
 #import "AgentStore.h"
 
-extern void DSAEnsureEntry(UIView *view);
-extern void DSAOnSessionShown(NSString *sessionId);
+#import "DSAShared.h"
 
 %hook UIViewController
 

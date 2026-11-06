@@ -6,7 +6,6 @@
 #import "AgentListController.h"
 #import <objc/runtime.h>
 
-extern void DSAOpenNewChatWithAgent(DSAAgent *agent);
 
 static UIColor *DSAAccent(void) { return [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0]; }
 static NSInteger const kTagAgentChats = 1001;

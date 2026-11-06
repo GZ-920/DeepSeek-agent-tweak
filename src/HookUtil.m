@@ -3,6 +3,7 @@
 //  三个 .m 之间共用的小工具（放独立翻译单元，避免重复定义）
 //
 #import <UIKit/UIKit.h>
+#import "DSAShared.h"
 #import <objc/runtime.h>
 
 UIWindow *DSAKeyWindow(void) {

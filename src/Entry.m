@@ -2,11 +2,10 @@
 //  Entry.m — 侧栏顶部「智能体」入口
 //
 #import <UIKit/UIKit.h>
+#import "DSAShared.h"
 #import <objc/runtime.h>
 #import "AgentListController.h"
 
-extern UIWindow *DSAKeyWindow(void);
-extern UIViewController *DSATopMost(UIViewController *base);
 
 static char kDSAEntryTag;
 
