@@ -10,22 +10,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show env
+        run: |
+          sw_vers || true
+          xcodebuild -version || true
+
       - name: Install Theos
         run: |
-          git clone --recursive --depth 1 https://github.com/theos/theos.git ~/theos
+          set -e
+          git clone --recursive --depth 1 https://github.com/theos/theos.git ~/theos || true
+          ls ~/theos | head
           echo "THEOS=$HOME/theos" >> $GITHUB_ENV
 
       - name: Build package
         run: |
-          make package FINALPACKAGE=1
+          set -x
+          make package FINALPACKAGE=1 LOG=1 || {
+            echo "::error::make failed";
+            find .theos -name '*.log' -o -name '*.d' 2>/dev/null | head -20;
+            find . -name '*.o' | head;
+            exit 1;
+          }
 
       - name: Collect artifacts
+        if: always()
         run: |
           mkdir -p out
           cp -v packages/*.deb out/ 2>/dev/null || true
           find .theos -name "DSAAgent.dylib" -exec cp -v {} out/ \;
+          ls -la out || true
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: DSAAgent
           path: out/*
