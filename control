@@ -1,0 +1,12 @@
+{
+  "name": "DSAAgent",
+  "package": "com.minis.dsagent",
+  "version": "0.1.0",
+  "description": "为 DeepSeek iOS 增加「智能体」：新对话自动先发送设定提示词",
+  "maintainer": "minis",
+  "author": "minis",
+  "section": "Tweaks",
+  "depends": [],
+  "architecture": "iphoneos-arm64",
+  "filter": [{ "bundles": ["com.deepseek.chat"] }]
+}
