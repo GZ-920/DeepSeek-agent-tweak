@@ -32,10 +32,13 @@ static UIView *DSAMakeNativeBar(void) {
     UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
     lab.translatesAutoresizingMaskIntoConstraints = NO;
     lab.text = @"智能体";
-    lab.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    CGFloat lead = 16, rowH = 48, fsz = 15;
+    DSAMeasureListMetrics(&lead, &rowH, &fsz);
+    lab.font = [UIFont systemFontOfSize:fsz weight:UIFontWeightSemibold];
     lab.textColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
     lab.userInteractionEnabled = NO;
     [btn addSubview:lab];
+    [lab.leadingAnchor constraintEqualToAnchor:btn.leadingAnchor constant:lead].active = YES;
 
     UIView *line = [[UIView alloc] initWithFrame:CGRectZero];
     line.translatesAutoresizingMaskIntoConstraints = NO;
@@ -47,7 +50,6 @@ static UIView *DSAMakeNativeBar(void) {
         [btn.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor],
         [btn.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor],
         [btn.bottomAnchor constraintEqualToAnchor:bar.bottomAnchor],
-        [lab.leadingAnchor constraintEqualToAnchor:btn.leadingAnchor constant:16],
         [lab.centerYAnchor constraintEqualToAnchor:btn.centerYAnchor],
         [line.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor constant:16],
         [line.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor constant:-16],
@@ -145,6 +147,47 @@ BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat moveBy, UIView 
     objc_setAssociatedObject(list, (__bridge const void *)kTot, @(already + moveBy),
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     DSADiagLog([NSString stringWithFormat:@"[PUSH] ok total=%.0f constant=%.0f", already + moveBy, hitC.constant]);
+    return YES;
+}
+
+/// 量出原生会话列表的真实排版参数（左边距 / 行高 / 字号），供智能体区块套用
+/// 返回 YES 表示量到了
+BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFont) {
+    UIView *list = DSAFindSessionListView();
+    if (!list) return NO;
+    NSArray *cells = nil;
+    if ([list isKindOfClass:[UICollectionView class]]) cells = [(UICollectionView *)list visibleCells];
+    else if ([list isKindOfClass:[UITableView class]]) cells = [(UITableView *)list visibleCells];
+    if (!cells.count) return NO;
+
+    id cell = cells.firstObject;
+    // 找 cell 里最靠左的 label
+    CGFloat leading = CGFLOAT_MAX, font = 0;
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:cell];
+    UILabel *firstLabel = nil;
+    while (stack.count) {
+        UIView *v = stack.lastObject; [stack removeLastObject];
+        for (UIView *s2 in v.subviews) [stack addObject:s2];
+        if (![v isKindOfClass:[UILabel class]]) continue;
+        UILabel *l = (UILabel *)v;
+        if (!l.text.length) continue;
+        CGRect r = [l convertRect:l.bounds toView:list];
+        if (r.origin.x < leading) leading = r.origin.x;
+        if (!firstLabel || r.origin.y < [firstLabel convertRect:firstLabel.bounds toView:list].origin.y)
+            firstLabel = l;
+        if (l.font.pointSize > font) font = l.font.pointSize;
+    }
+    if (leading == CGFLOAT_MAX || leading < 0) leading = 16;
+
+    CGFloat rowH = cell.bounds.size.height;
+    if (rowH < 20) rowH = 48;
+
+    if (outLeading) *outLeading = leading;
+    if (outRowH) *outRowH = rowH;
+    if (outFont) *outFont = font > 0 ? font : 15;
+
+    DSADiagLog([NSString stringWithFormat:@"[METRICS] leading=%.0f rowH=%.0f font=%.1f cell=%@",
+                 leading, rowH, font, NSStringFromClass([cell class])]);
     return YES;
 }
 

@@ -31,6 +31,12 @@ static UIView *DSAMakeAgentSection(void) {
     [store loadIfNeeded];
     NSArray<DSAAgent *> *agents = store.agents;
 
+    // ★ 套用原生对话列表的真实排版（左边距/行高/字号），避免文字紧贴左边缘、与下方不协调
+    CGFloat lead = 16, rowH = 48, fsz = 15;
+    if (!DSAMeasureListMetrics(&lead, &rowH, &fsz)) {
+        DSADiagLog(@"[SIDEBAR] metrics unavailable, fallback 16/48/15");
+    }
+
     UIStackView *stack = [[UIStackView alloc] initWithFrame:CGRectZero];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 0;
@@ -41,9 +47,11 @@ static UIView *DSAMakeAgentSection(void) {
         UILabel *l = [[UILabel alloc] initWithFrame:CGRectZero];
         l.translatesAutoresizingMaskIntoConstraints = NO;
         l.text = t;
-        l.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+        l.font = [UIFont systemFontOfSize:fsz - 2 weight:UIFontWeightSemibold];
         l.textColor = [UIColor secondaryLabelColor];
-        [l.heightAnchor constraintEqualToConstant:26].active = YES;
+        [l.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:lead];
+        [l.trailingAnchor constraintEqualToAnchor:stack.trailingAnchor constant:-lead];
+        [l.heightAnchor constraintEqualToConstant:rowH * 0.6].active = YES;
         return l;
     };
 
@@ -72,11 +80,12 @@ static UIView *DSAMakeAgentSection(void) {
         lab2.hidden = !sub.length;
         [row addSubview:lab2];
 
+        lab.font = [UIFont systemFontOfSize:fsz];
         [NSLayoutConstraint activateConstraints:@[
-            [row.heightAnchor constraintEqualToConstant:40],
-            [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:4],
-            [lab.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-4],
-            [lab.topAnchor constraintEqualToAnchor:row.topAnchor constant:5],
+            [row.heightAnchor constraintEqualToConstant:rowH],
+            [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:lead],
+            [lab.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-lead],
+            [lab.topAnchor constraintEqualToAnchor:row.topAnchor constant:rowH * 0.14],
             [lab2.leadingAnchor constraintEqualToAnchor:lab.leadingAnchor],
             [lab2.trailingAnchor constraintEqualToAnchor:lab.trailingAnchor],
             [lab2.topAnchor constraintEqualToAnchor:lab.bottomAnchor constant:1],
@@ -380,35 +389,10 @@ void DSAEnsureNativeSidebar(void) {
 
 /// 设置：新增 / 删除都在这里
 + (void)settingsTapped:(UIControl *)sender {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
-        if (!top) return;
-        UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"管理智能体"
-                                                                      message:nil
-                                                               preferredStyle:UIAlertControllerStyleActionSheet];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"新增智能体" style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *x) {
-            DSAPresentAgentEditor(top, nil, ^(DSAAgent *saved, BOOL startNew) {
-                DSARefreshNativeSidebar();
-                if (startNew) DSAOpenNewChatWithAgent(saved);
-            });
-        }]];
-        // 删除：逐个列出
-        NSArray<DSAAgent *> *agents = [DSAStore shared].agents;
-        for (DSAAgent *ag in agents) {
-            [sheet addAction:[UIAlertAction actionWithTitle:[@"删除 " stringByAppendingString:ag.name]
-                                                      style:UIAlertActionStyleDestructive
-                                                    handler:^(UIAlertAction *x) {
-                [[DSAStore shared] deleteAgentWithId:ag.agentId];
-                DSARefreshNativeSidebar();
-                DSAToast([NSString stringWithFormat:@"已删除「%@」", ag.name]);
-            }]];
-        }
-        [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-        sheet.popoverPresentationController.sourceView = sender;
-        [top presentViewController:sheet animated:YES completion:nil];
-    });
+    DSADiagLog(@"[SIDEBAR] open settings page");
+    DSAShowSettings();
 }
+
 
 @end
 

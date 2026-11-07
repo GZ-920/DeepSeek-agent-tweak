@@ -24,6 +24,7 @@ void DSAEnsureFloatingEntry(void);
 // NativeInsert.m
 void DSAEnsureNativeEntry(void);
 UIView *DSAFindSessionListView(void);
+BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFont);
 BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat neededTotal, UIView *searchBar);
 // NativeSidebar.m
 void DSAEnsureNativeSidebar(void);
@@ -44,6 +45,10 @@ void DSASetFillDelay(NSTimeInterval sec);
 void DSAStartInjectionPolling(void);
 void DSADiagLog(NSString *line);
 void DSALogVersion(void);
+// AgentSettings.m
+void DSAShowSettings(void);
+void DSAHideSettings(void);
+void DSARefreshSettings(void);
 // AgentEditor.m
 void DSAPresentAgentEditor(UIViewController *top, DSAAgent *existing,
                           void (^done)(DSAAgent *saved, BOOL startNew));
