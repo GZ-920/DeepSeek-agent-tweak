@@ -118,21 +118,30 @@ static UIView *DSAFindSearchBar(UIView *root) {
     return best;
 }
 
-/// 尝试把钉住 target.top 的约束常量加大 44pt，腾出空间
-static BOOL DSAMakeRoom(UIView *target, UIView *host) {
+/// 把钉住 target.top 的**原有**约束常量加大 delta（不新增约束，避免和现有布局打架）
+static BOOL DSAMakeRoom(UIView *target, UIView *host, CGFloat delta) {
     for (NSLayoutConstraint *c in host.constraints) {
         if (c.firstItem == target && c.firstAttribute == NSLayoutAttributeTop &&
             c.relation == NSLayoutRelationEqual) {
-            c.constant += 44;
-            DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed list down via host constraint (constant=%.0f)", c.constant]);
+            c.constant += delta;
+            DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed list down (host constraint constant=%.0f)", c.constant]);
             return YES;
         }
     }
     for (NSLayoutConstraint *c in target.constraints) {
         if (c.firstItem == host && c.firstAttribute == NSLayoutAttributeTop &&
             c.relation == NSLayoutRelationEqual) {
-            c.constant += 44;
-            DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed list down via target constraint (constant=%.0f)", c.constant]);
+            c.constant += delta;
+            DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed list down (target constraint constant=%.0f)", c.constant]);
+            return YES;
+        }
+    }
+    // 兜底：找任何把 target.top 约束到 host 系的等式约束
+    for (NSLayoutConstraint *c in host.constraints) {
+        if (c.firstItem == target && c.firstAttribute == NSLayoutAttributeTop &&
+            c.relation != NSLayoutRelationGreaterThanOrEqual) {
+            c.constant += delta;
+            DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed list down (fallback constraint constant=%.0f)", c.constant]);
             return YES;
         }
     }
@@ -182,16 +191,23 @@ BOOL DSAInsertIntoNativeList(void) {
             [bar.leadingAnchor constraintEqualToAnchor:search.leadingAnchor],
             [bar.trailingAnchor constraintEqualToAnchor:search.trailingAnchor],
         ]];
-        // 列表不能盖住条：把它推到条下面
+        // 列表不能盖住条：按需把它的**原有**顶部约束加大，而不是新增冲突约束
         if (target.superview == shost || [target isDescendantOfView:shost]) {
-            NSLayoutConstraint *push = [NSLayoutConstraint constraintWithItem:target
-                                                                   attribute:NSLayoutAttributeTop
-                                                                   relatedBy:NSLayoutRelationGreaterThanOrEqual
-                                                                      toItem:bar
-                                                                   attribute:NSLayoutAttributeBottom
-                                                                  multiplier:1 constant:0];
-            push.priority = UILayoutPriorityRequired;
-            push.active = YES;
+            [shost layoutIfNeeded];
+            CGFloat searchBottomInHost = [search convertRect:search.bounds toView:shost].origin.y +
+                                         search.bounds.size.height;
+            CGFloat targetTopInHost = [target convertRect:target.bounds toView:shost].origin.y;
+            CGFloat need = (searchBottomInHost + 44) - targetTopInHost;
+            DSADiagLog([NSString stringWithFormat:@"[NATIVE] searchBottom=%.0f targetTop=%.0f need=%.0f",
+                         searchBottomInHost, targetTopInHost, need]);
+            if (need > 1) {
+                if (!DSAMakeRoom(target, shost, need)) {
+                    DSADiagLog(@"[NATIVE] cannot push list down, abort to avoid breaking search bar");
+                    [bar removeFromSuperview];
+                    return NO;
+                }
+                [shost layoutIfNeeded];
+            }
         }
         [shost bringSubviewToFront:bar];
         objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -208,7 +224,7 @@ BOOL DSAInsertIntoNativeList(void) {
     CGRect tf = [target convertRect:target.bounds toView:host2];
     CGFloat gap = tf.origin.y;
     if (gap < 40) {
-        if (!DSAMakeRoom(target, host2)) {
+        if (!DSAMakeRoom(target, host2, 44)) {
             DSADiagLog(@"[NATIVE] cannot make room (no top constraint found), keeping pill");
             return NO;
         }
