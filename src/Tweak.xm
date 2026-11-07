@@ -66,19 +66,7 @@ static UIView *DSAFindListByTree(void) {
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
-    NSString *cls = NSStringFromClass([self class]);
-    if ([cls containsString:@"MessageViewController"] ||
-        [cls containsString:@"MessageListViewController"]) {
-        for (NSString *k in @[ @"sessionId", @"sessionID", @"chatSessionId", @"currentSessionId" ]) {
-            @try {
-                id sid = [self valueForKey:k];
-                if ([sid isKindOfClass:[NSString class]] && [sid length]) {
-                    DSAOnSessionShown((NSString *)sid);
-                    break;
-                }
-            } @catch (__unused NSException *e) {}
-        }
-    }
+    // 会话检测已改为 %ctor 的 NSTimer 轮询（hook 在此环境不触发）
 }
 
 - (void)viewWillAppear:(BOOL)animated {
