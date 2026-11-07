@@ -160,7 +160,7 @@ BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFo
     else if ([list isKindOfClass:[UITableView class]]) cells = [(UITableView *)list visibleCells];
     if (!cells.count) return NO;
 
-    id cell = cells.firstObject;
+    UIView *cell = cells.firstObject;
     // 找 cell 里最靠左的 label
     CGFloat leading = CGFLOAT_MAX, font = 0;
     NSMutableArray *stack = [NSMutableArray arrayWithObject:cell];
