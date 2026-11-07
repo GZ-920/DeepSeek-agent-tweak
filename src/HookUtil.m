@@ -67,3 +67,15 @@ Class DSAClassNamed(NSString *name) {
     free(classes);
     return found;
 }
+
+void DSADiagLog(NSString *line) {
+    @try {
+        NSLog(@"[DSAgent] %@", line);
+        NSString *dir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        if (!dir) return;
+        NSString *path = [dir stringByAppendingPathComponent:@"DSAgent_diag.txt"];
+        NSString *old = [NSString stringWithContentsOfFile:path encoding:NSUTF8StringEncoding error:nil] ?: @"";
+        if (old.length > 100000) old = @"";
+        [[old stringByAppendingFormat:@"%@\n", line] writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
+    } @catch (__unused NSException *e) {}
+}

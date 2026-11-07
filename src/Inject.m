@@ -26,6 +26,8 @@ static void DSAWalk(UIView *root, void (^block)(UIView *)) {
     }
 }
 
+extern void DSADiagLog(NSString *line);
+
 static UITextView *DSAFindPromptTextView(void) {
     UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
     __block UITextView *best = nil;
@@ -35,6 +37,7 @@ static UITextView *DSAFindPromptTextView(void) {
         CGFloat area = v.frame.size.width * v.frame.size.height;
         if (area > bestArea && v.window) { best = (UITextView *)v; bestArea = area; }
     });
+    DSADiagLog([NSString stringWithFormat:@"[INPUT] tv=%@", best ? NSStringFromClass([best class]) : @"nil"]);
     return best;
 }
 
@@ -49,6 +52,8 @@ static UIButton *DSAFindSendButton(void) {
             [label.lowercaseString containsString:@"send"])
             send = (UIButton *)v;
     });
+    DSADiagLog([NSString stringWithFormat:@"[SEND] btn=%@ label=%@", send ? NSStringFromClass([send class]) : @"nil",
+                 send ? (send.accessibilityLabel ?: @"") : @""]);
     return send;
 }
 
@@ -93,6 +98,9 @@ static void DSARetryPending(NSString *sessionId, int attempt) {
 /// 会话页出现时调用
 void DSAOnSessionShown(NSString *sessionId) {
     if (!sessionId.length) return;
+    DSADiagLog([NSString stringWithFormat:@"[SESSION] shown sid=%@ pending=%@",
+                 [sessionId substringToIndex:MIN((NSUInteger)12, sessionId.length)],
+                 [[DSAStore shared] pendingAgentId] ?: @"none"]);
     DSAStore *store = [DSAStore shared];
     [store loadIfNeeded];
     NSString *pending = [store pendingAgentId];

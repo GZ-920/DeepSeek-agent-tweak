@@ -1,11 +1,12 @@
 //
 //  Trigger.m — 「用某智能体新建对话」
 //
-//  两段式：
-//    1. 记录 pendingAgentId（会话页出现时 Inject.m 会接管发提示词）
-//    2. 尽量真的新建一个对话：
-//       a) 找到输入框所在页面，模拟点「新建对话 / 侧栏 +」按钮
-//       b) 找不到就跳回聊天首页（pop 到根），让用户点 +；此时 pendingAgentId 依然有效
+//  App 的「新建对话」入口是 Swift 闭包/手势，hook 不到，按钮类名也不一定叫 Button。
+//  所以这里做多层兜底，任意一层命中即可：
+//    1. 通知 DSANewChatRequest（App 内部若有监听会响应）
+//    2. 找 accessibilityLabel 含「新建 / new」的按钮，sendActions
+//    3. 找视图树里带「新建/newChat」字样的 UIControl，sendActions
+//    4. 仍不行 → 提示用户点一下 +，此时 pendingAgentId 保留，Inject 会在新会话出现时发提示词
 //
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
@@ -13,15 +14,13 @@
 #import "AgentStore.h"
 #import "AgentListController.h"
 
-extern UIViewController *DSATopMost(UIViewController *base);
-extern UIWindow *DSAKeyWindow(void);
-extern void DSAToast(NSString *text);
+void DSADiagLog(NSString *line);
 
-static void DSAWalk(UIView *root, void (^block)(UIView *)) {
+static void DSAWalkAll(UIView *root, void (^block)(UIView *)) {
     if (!root) return;
     NSMutableArray *stack = [NSMutableArray arrayWithObject:root];
     int guard = 0;
-    while (stack.count && guard++ < 5000) {
+    while (stack.count && guard++ < 8000) {
         UIView *v = stack.lastObject;
         [stack removeLastObject];
         if (v.hidden || v.alpha < 0.05) continue;
@@ -30,60 +29,85 @@ static void DSAWalk(UIView *root, void (^block)(UIView *)) {
     }
 }
 
-/// 找「新建对话」按钮：优先 accessibilityLabel，其次 systemItem 类名
-static UIButton *DSAFindNewChatButton(void) {
-    UIWindow *w = DSAKeyWindow();
-    __block UIButton *hit = nil;
-    DSAWalk(w, ^(UIView *v) {
-        if (hit || ![v isKindOfClass:[UIButton class]] || !v.window) return;
-        NSString *label = [(UIButton *)v accessibilityLabel] ?: @"";
-        NSString *cls = NSStringFromClass([v class]);
-        if ([label containsString:@"新建"] || [label.lowercaseString containsString:@"new chat"] ||
-            [label.lowercaseString containsString:@"new conversation"] ||
-            [cls containsString:@"NewChat"] || [cls containsString:@"Compose"])
-            hit = (UIButton *)v;
-    });
-    return hit;
+static BOOL DSALooksLikeNewChat(UIView *v) {
+    NSString *label = v.accessibilityLabel ?: @"";
+    NSString *cls = NSStringFromClass([v class]);
+    NSString *lowLabel = label.lowercaseString;
+    NSString *lowCls = cls.lowercaseString;
+    if ([label containsString:@"新建"] || [label containsString:@"新对话"]) return YES;
+    if ([lowLabel containsString:@"new chat"] || [lowLabel containsString:@"new conversation"]) return YES;
+    if ([lowLabel containsString:@"新"]) return YES;
+    if ([lowCls containsString:@"newchat"]) return YES;
+    // 图标按钮常见 identifier
+    NSString *aid = v.accessibilityIdentifier ?: @"";
+    if ([aid.lowercaseString containsString:@"new"]) return YES;
+    return NO;
 }
 
-/// 尝试把界面退回聊天首页（可弹出侧栏的地方）
-static void DSABackToChatHome(void) {
+/// 在所有可见视图里找「新建对话」控件并触发
+static BOOL DSAClickNewChat(void) {
+    UIWindow *w = DSAKeyWindow();
+    if (!w) return NO;
+    __block UIView *hit = nil;
+    DSAWalkAll(w, ^(UIView *v) {
+        if (hit) return;
+        if (![v isUserInteractionEnabled] || !v.window) return;
+        if (!DSALooksLikeNewChat(v)) return;
+        hit = v;
+    });
+    if (hit) {
+        NSLog(@"[DSAgent] new-chat candidate: %@ label=%@", NSStringFromClass([hit class]),
+              hit.accessibilityLabel);
+        if ([hit isKindOfClass:[UIControl class]]) {
+            [(UIControl *)hit sendActionsForControlEvents:UIControlEventTouchUpInside];
+            return YES;
+        }
+        // 非 UIControl：用点按手势模拟
+        UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] init];
+        [hit addGestureRecognizer:tap];
+        // 手势无法直接触发，退化到命中测试 + 单点触摸
+        [hit removeGestureRecognizer:tap];
+    }
+    return NO;
+}
+
+/// 把界面退回到聊天首页（能在那里找到 + 号）
+static void DSABackToRoot(void) {
     UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
-    if (!top) return;
-    UINavigationController *nav = nil;
     UIViewController *p = top;
     while (p) {
-        if ([p isKindOfClass:[UINavigationController class]]) { nav = (UINavigationController *)p; break; }
+        if ([p isKindOfClass:[UINavigationController class]]) {
+            UINavigationController *nav = (UINavigationController *)p;
+            if (nav.viewControllers.count > 1) [nav popToRootViewControllerAnimated:YES];
+            return;
+        }
         p = p.parentViewController;
     }
-    if (!nav) return;
-    if (nav.viewControllers.count > 1) [nav popToRootViewControllerAnimated:YES];
 }
 
 void DSAOpenNewChatWithAgent(DSAAgent *agent) {
     if (!agent) return;
+    DSADiagLog([NSString stringWithFormat:@"[NEWCHAT] agent=%@ pending set", agent.name]);
     [[DSAStore shared] setPendingAgentId:agent.agentId];
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *w = DSAKeyWindow();
-        UIViewController *root = w.rootViewController;
-        // 先把我们自己弹出的智能体页收掉，露出聊天界面
-        UIViewController *top = DSATopMost(root);
-        if ([top isKindOfClass:[DSAAgentListController class]] ||
+        void (^proceed)(void) = ^{
+            DSABackToRoot();
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                if (DSAClickNewChat()) {
+                    DSAToast([NSString stringWithFormat:@"正在用「%@」新建对话…", agent.name]);
+                } else {
+                    DSAToast([NSString stringWithFormat:@"点一下「新建对话」，\n会自动发送「%@」的设定提示词", agent.name]);
+                }
+            });
+        };
+
+        UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
+        BOOL isOurs = [top isKindOfClass:[DSAAgentListController class]] ||
             ([top isKindOfClass:[UINavigationController class]] &&
-             [[(UINavigationController *)top topViewController] isKindOfClass:[DSAAgentListController class]])) {
-            [top dismissViewControllerAnimated:YES completion:^{
-                DSABackToChatHome();
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{
-                    UIButton *btn = DSAFindNewChatButton();
-                    if (btn) [btn sendActionsForControlEvents:UIControlEventTouchUpInside];
-                    else DSAToast([NSString stringWithFormat:@"已选好「%@」\n点一下「新建对话」，会自动发送设定提示词", agent.name]);
-                });
-            }];
-        } else {
-            DSABackToChatHome();
-            DSAToast([NSString stringWithFormat:@"已选好「%@」\n点「新建对话」后会自动发送设定提示词", agent.name]);
-        }
+             [[(UINavigationController *)top topViewController] isKindOfClass:[DSAAgentListController class]]);
+        if (isOurs) [top dismissViewControllerAnimated:YES completion:proceed];
+        else proceed();
     });
 }
