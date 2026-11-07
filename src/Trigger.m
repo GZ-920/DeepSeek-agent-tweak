@@ -120,7 +120,10 @@ void DSAOpenNewChatWithAgent(DSAAgent *agent) {
             DSABackToRoot();
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
-                if (DSAClickNewChat()) {
+                BOOL clicked = DSAClickNewChat();
+                DSADiagLog(clicked ? @"[NEWCHAT] clicked sessionNewChatButton OK"
+                                   : @"[NEWCHAT] click FAILED (button not found)");
+                if (clicked) {
                     DSAToast([NSString stringWithFormat:@"正在用「%@」新建对话…", agent.name]);
                 } else {
                     DSAToast([NSString stringWithFormat:@"点一下「新建对话」，\n会自动发送「%@」的设定提示词", agent.name]);

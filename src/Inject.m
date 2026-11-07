@@ -18,6 +18,7 @@ void DSADiagLog(NSString *line);
 // —— 发送尝试状态：0=未开始, >0=已尝试次数, -1=已完成（不再动）——
 static int DSASendTries = 0;
 static const int kDSAMaxTries = 3;
+static BOOL DSARoundActive = NO;    // 本轮是否已填过（只认本次运行内填的，避免重启后残留状态误发）
 
 // —— 最早允许填充的时间戳（点完新建对话要等新会话打开）——
 static NSTimeInterval DSAFillNotBefore = 0;
@@ -150,43 +151,57 @@ static BOOL DSATrySendOnce(void) {
 
 #pragma mark - 轮询
 
+// 状态：
+//   pending 非空        → 需要填（阶段 A）
+//   pending 空 + 已填   → 需要发（阶段 B，最多 kDSAMaxTries 次）
+//   DSASendTries = -1   → 本轮完成，永不再动
 void DSAInjectTick(void) {
     @try {
-        if (DSASendTries < 0) return;                 // 已完成，永不再动
-        if (DSASendTries >= kDSAMaxTries) {           // 尝试用尽 → 停手，交给用户
-            return;
-        }
-        // 等新会话打开，避免把提示词填进旧会话
-        if ([[NSDate date] timeIntervalSince1970] < DSAFillNotBefore) return;
+        if (DSASendTries < 0) return;                       // 本轮已完成
 
         DSAStore *store = [DSAStore shared];
         [store loadIfNeeded];
+
+        // —— 阶段 A：有待发提示词 → 填一次 ——
         NSString *pending = [store pendingAgentId];
-        if (!pending.length) return;
-
-        DSAAgent *agent = [store agentWithId:pending];
-        if (!agent || !agent.systemPrompt.length) {
-            [store setPendingAgentId:nil];            // 智能体被删了 → 清掉
-            return;
-        }
-
-        // ① 填一次，填完立刻清 pending（杜绝重复填）
-        if (![store sessionInjected:@"_filled"]) {
-            if (!DSAFillPrompt(agent.systemPrompt)) return;   // 还没输入框，下秒再试
+        if (pending.length) {
+            // 等新会话打开，避免填进旧会话
+            if ([[NSDate date] timeIntervalSince1970] < DSAFillNotBefore) return;
+            DSAAgent *agent = [store agentWithId:pending];
+            if (!agent || !agent.systemPrompt.length) {
+                [store setPendingAgentId:nil];              // 智能体被删了
+                return;
+            }
+            if (!DSAFillPrompt(agent.systemPrompt)) return; // 还没输入框，下秒再试
             [store markSessionInjected:@"_filled"];
-            [store setPendingAgentId:nil];
-            DSASendTries = 1;                          // 开始尝试发送
+            [store setPendingAgentId:nil];                  // 填完立刻清，杜绝重复填
+            DSASendTries = 0;                               // 进入发送阶段
+            DSARoundActive = YES;
             DSADiagLog(@"[STATE] filled once, pending cleared, will try send");
             return;
         }
 
-        // ② 已填过 → 尝试发送，最多 3 次
+        // —— 阶段 B：已填过 → 尝试发送（最多 3 次，成功即停）——
+        if (DSASendTries < 0) return;
+        if (!DSARoundActive) return;                        // 本轮没填过，无事可做
+
+        // 先判断是否已经发出去了：输入框被清空 = 发送成功
+        UITextView *tv = DSAFindPromptTextView();
+        if (tv) {
+            NSString *cur = tv.text ?: @"";
+            if (cur.length == 0) {
+                DSASendTries = -1;
+                DSADiagLog(@"[STATE] input cleared → message sent OK");
+                return;
+            }
+        }
+        if (DSASendTries >= kDSAMaxTries) {
+            DSASendTries = -1;
+            DSADiagLog(@"[STATE] send attempts exhausted, stop (text still in box)");
+            return;
+        }
         DSASendTries++;
         DSATrySendOnce();
-        if (DSASendTries >= kDSAMaxTries) {
-            DSADiagLog(@"[STATE] send attempts exhausted, stop");
-            DSASendTries = -1;                         // 永久停止
-        }
     } @catch (__unused NSException *e) {
         DSADiagLog([NSString stringWithFormat:@"[POLL] exception %@", e.reason]);
     }
@@ -195,6 +210,7 @@ void DSAInjectTick(void) {
 /// 用户手动点了新建对话 / 重新选择智能体时，重置状态
 void DSAResetInjection(void) {
     DSASendTries = 0;
+    DSARoundActive = NO;
     DSAFillNotBefore = 0;
     [[DSAStore shared] uninjectMark:@"_filled"];
 }
