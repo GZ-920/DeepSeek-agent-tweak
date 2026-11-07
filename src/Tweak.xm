@@ -120,7 +120,10 @@ static UIView *DSAFindListByTree(void) {
         // 注入轮询：不依赖 hook，用 NSTimer（避免 block 自引用 retain cycle）
         dispatch_async(dispatch_get_main_queue(), ^{
             NSTimer *t = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
-                                                          block:^(NSTimer *timer) { DSAInjectTick(); }];
+                                                          block:^(NSTimer *timer) {
+                DSAInjectTick();        // 提示词注入
+                DSAEnsureNativeEntry(); // 原生列表入口（找到会话列表就插，插过就跳过）
+            }];
             (void)t;
         });
         NSLog(@"[DSAgent] loaded");

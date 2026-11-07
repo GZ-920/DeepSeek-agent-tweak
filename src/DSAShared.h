@@ -21,14 +21,13 @@ Class DSAClassNamed(NSString *name);
 // Entry.m
 void DSAEnsureEntry(UIView *view);
 void DSAEnsureFloatingEntry(void);
+// NativeInsert.m
+void DSAEnsureNativeEntry(void);
+void DSARemoveFloatingPill(void);
 // Inject.m
 BOOL DSASendPrompt(NSString *prompt);
 // Trigger.m
 void DSAOpenNewChatWithAgent(DSAAgent *agent);
-// ClickSim.m
-BOOL DSATapAtPoint(CGPoint pointInWindow);
-// TapProbe.m
-void DSAStartTapProbe(void);
 // SelfTest.m
 void DSAInstallSelfTest(void);
 void DSAScanControls(id vc);

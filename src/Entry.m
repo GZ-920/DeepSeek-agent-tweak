@@ -13,6 +13,8 @@
 #import "AgentListController.h"
 
 // 代理类统一定义在 Sidebar.m
+void DSADiagLog(NSString *line);
+
 @interface DSAEntryProxy : NSObject
 + (void)tapped;
 + (void)tapMask;
@@ -146,4 +148,18 @@ void DSAEnsureFloatingEntry(void) {
     @try { DSAInstallFloatingEntry(); }
     @catch (__unused NSException *e) { NSLog(@"[DSAgent] floating failed: %@", e.reason); }
     @finally { dispatching = NO; }
+}
+
+/// 原生入口插好后，移除悬浮胶囊
+void DSARemoveFloatingPill(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *w = DSAKeyWindow();
+        if (!w) return;
+        UIView *pill = objc_getAssociatedObject(w, &kDSAFloatingTag);
+        if (pill) {
+            [pill removeFromSuperview];
+            objc_setAssociatedObject(w, &kDSAFloatingTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            DSADiagLog(@"[NATIVE] floating pill removed");
+        }
+    });
 }
