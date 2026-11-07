@@ -45,6 +45,7 @@ void DSAHideSidebar(void);
 void DSAProbeWindows(void);
 void DSAProbeSquare(void);
 void DSAProbeVariants(void);
+void DSARemoveProbePill(void);
 
 #ifdef __cplusplus
 }

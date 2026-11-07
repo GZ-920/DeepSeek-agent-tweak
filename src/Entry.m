@@ -152,6 +152,7 @@ void DSAEnsureFloatingEntry(void) {
 
 /// 原生入口插好后，移除悬浮胶囊
 void DSARemoveFloatingPill(void) {
+    DSARemoveProbePill();
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *w = DSAKeyWindow();
         if (!w) return;

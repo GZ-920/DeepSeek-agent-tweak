@@ -113,12 +113,14 @@ BOOL DSAInsertIntoNativeList(void) {
 
     // 关键：条的底边贴着列表顶边 → 正好在搜索框下面，绝不会跑到状态栏
     NSLayoutConstraint *bottom = [bar.bottomAnchor constraintEqualToAnchor:target.topAnchor];
-    NSLayoutConstraint *h = [bar.heightAnchor constraintEqualToConstant:44];
     NSLayoutConstraint *lead = [bar.leadingAnchor constraintEqualToAnchor:target.leadingAnchor];
     NSLayoutConstraint *trail = [bar.trailingAnchor constraintEqualToAnchor:target.trailingAnchor];
-    // 顶边不低于容器顶（防止列表 y=0 时条跑到屏幕外）
+
+    // 顶边绝不出容器顶部（required，保证不会跑到状态栏/屏幕外）
     NSLayoutConstraint *topGuard = [bar.topAnchor constraintGreaterThanOrEqualToAnchor:host.topAnchor];
-    topGuard.priority = UILayoutPriorityDefaultHigh;
+    // 高度 44 但可被压缩：上方空隙不够时自动变矮，仍然可见（避免整条被挤出屏幕）
+    NSLayoutConstraint *h = [bar.heightAnchor constraintEqualToConstant:44];
+    h.priority = UILayoutPriorityDefaultHigh;
 
     [NSLayoutConstraint activateConstraints:@[bottom, h, lead, trail, topGuard]];
     [host bringSubviewToFront:bar];
@@ -128,8 +130,15 @@ BOOL DSAInsertIntoNativeList(void) {
     DSADiagLog([NSString stringWithFormat:@"[NATIVE] inserted on %@ (host %@)",
                  NSStringFromClass([target class]), NSStringFromClass([host class])]);
 
-    // 原生入口已就位 → 收掉悬浮胶囊
+    // 打几何信息，便于判断条落在哪
+    CGRect tf = [target convertRect:target.bounds toView:host];
+    DSADiagLog([NSString stringWithFormat:@"[NATIVE] geom target=%.0f,%.0fx%.0f host=%.0fx%.0f hostCls=%@",
+                 tf.origin.x, tf.origin.y, tf.size.width, host.bounds.size.width, host.bounds.size.height,
+                 NSStringFromClass([host class])]);
+
+    // 原生入口已就位 → 收掉两种悬浮胶囊
     DSARemoveFloatingPill();
+    DSARemoveProbePill();
     return YES;
 }
 

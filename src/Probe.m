@@ -117,3 +117,17 @@ void DSAProbeSquare(void) {
         NSLog(@"[DSAgent] square failed %@", e.reason);
     }
 }
+
+/// 移除探针挂的胶囊（key 是字符串 @"DSAEntryPill"，和 Entry.m 的 static key 不是一个）
+void DSARemoveProbePill(void) {
+    @try {
+        UIWindow *w = DSAKeyWindow();
+        if (!w) return;
+        UIView *pill = objc_getAssociatedObject(w, @"DSAEntryPill");
+        if (pill) {
+            [pill removeFromSuperview];
+            objc_setAssociatedObject(w, @"DSAEntryPill", nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            NSLog(@"[DSAgent] probe pill removed");
+        }
+    } @catch (__unused NSException *e) {}
+}
