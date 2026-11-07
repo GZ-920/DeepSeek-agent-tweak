@@ -129,15 +129,11 @@ static UIView *DSAFindListByTree(void) {
                 DSAProbeVariants();
             });
         }
-        // 注入轮询：不依赖 hook，每秒一次
+        // 注入轮询：不依赖 hook，用 NSTimer（避免 block 自引用 retain cycle）
         dispatch_async(dispatch_get_main_queue(), ^{
-            DSAInjectTick();
-            __block void (^loop)(void) = ^{
-                DSAInjectTick();
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
-                               dispatch_get_main_queue(), ^{ loop(); });
-            };
-            loop();
+            NSTimer *t = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
+                                                          block:^(NSTimer *timer) { DSAInjectTick(); }];
+            (void)t;
         });
         NSLog(@"[DSAgent] loaded");
     }
