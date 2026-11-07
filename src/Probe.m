@@ -2,6 +2,7 @@
 //  Probe.m — 诊断：红色角标能显示，但按钮不行，所以先确认窗口结构
 //
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 #import "DSAShared.h"
 
 /// 把场景里所有 window 的层级/尺寸/keyWindow/rootVC 写进文件
@@ -75,7 +76,25 @@ void DSAProbeVariants(void) {
             }
             [w addSubview:v];
         }
-        NSLog(@"[DSAgent] variants added");
+
+        // ★ 第 5 个：真正的「智能体」胶囊，和上面完全同一段代码、同一时机
+        if (!objc_getAssociatedObject(w, @"DSAProbePill")) {
+            CGRect f = CGRectMake(8 + 4 * 84, baseY, 76, 34);
+            UIControl *pill = [[UIControl alloc] initWithFrame:f];
+            pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
+            pill.layer.cornerRadius = 17;
+            pill.clipsToBounds = YES;
+            UILabel *l = [[UILabel alloc] initWithFrame:pill.bounds];
+            l.text = @"智能体";
+            l.textColor = UIColor.whiteColor;
+            l.textAlignment = NSTextAlignmentCenter;
+            l.font = [UIFont boldSystemFontOfSize:13];
+            [pill addSubview:l];
+            [w addSubview:pill];
+            objc_setAssociatedObject(w, @"DSAProbePill", pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            NSLog(@"[DSAgent] probe pill at %@ / window %@ bounds %@",
+                  NSStringFromCGRect(pill.frame), NSStringFromClass([w class]), NSStringFromCGRect(w.bounds));
+        }
     } @catch (__unused NSException *e) {
         NSLog(@"[DSAgent] variants failed %@", e.reason);
     }
