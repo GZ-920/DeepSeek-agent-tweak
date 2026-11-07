@@ -26,6 +26,8 @@ BOOL DSASendPrompt(NSString *prompt);
 void DSAOpenNewChatWithAgent(DSAAgent *agent);
 // SelfTest.m
 void DSAInstallSelfTest(void);
+void DSAScanControls(id vc);
+void DSAForceShowAgents(void);
 
 #ifdef __cplusplus
 }
