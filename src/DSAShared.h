@@ -24,6 +24,8 @@ void DSAOnSessionShown(NSString *sessionId);
 BOOL DSASendPrompt(NSString *prompt);
 // Trigger.m
 void DSAOpenNewChatWithAgent(DSAAgent *agent);
+// SelfTest.m
+void DSAInstallSelfTest(void);
 
 #ifdef __cplusplus
 }

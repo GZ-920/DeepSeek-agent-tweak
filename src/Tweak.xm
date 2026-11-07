@@ -11,7 +11,6 @@
 #import "AgentStore.h"
 #import "DSAShared.h"
 
-void DSAInstallSelfTest(void);
 
 %hook UIViewController
 
