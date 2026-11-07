@@ -60,13 +60,14 @@ static UIView *DSAFindListByTree(void) {
 
 - (void)viewDidLayoutSubviews {
     %orig;
+    // 这里只做「找列表 → 插 header」，不再调用悬浮入口（高频路径，容易崩）
     UIView *list = DSAFindListByKey(self);
     if (list) DSAEnsureEntry(list);
-    DSAEnsureFloatingEntry();      // 悬浮入口兜底：任何页面布局完都确保它还在
 }
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
+    DSAEnsureFloatingEntry();      // 页面出现时挂/保活悬浮入口（低频，安全）
     NSString *cls = NSStringFromClass([self class]);
     if ([cls containsString:@"MessageViewController"] ||
         [cls containsString:@"MessageListViewController"]) {

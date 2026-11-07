@@ -14,6 +14,12 @@
 
 static char kDSAEntryTag;
 static char kDSAFloatingTag;
+static BOOL dispatching = NO;
+static BOOL DSAFloatingDisabled(void) {
+    static BOOL v; static dispatch_once_t once;
+    dispatch_once(&once, ^{ v = [[NSUserDefaults standardUserDefaults] boolForKey:@"DSAFloatingDisabled"]; });
+    return v;
+}
 
 @interface DSAEntryProxy : NSObject
 + (void)tapped;
@@ -71,9 +77,11 @@ static UIView *DSAMakeEntryBar(void) {
 
 /// 悬浮胶囊：挂在 window 上，位置避开状态栏（顶部、右侧下方一点）
 static void DSAInstallFloatingEntry(void) {
+    if (DSAFloatingDisabled()) return;
     UIWindow *w = DSAKeyWindow();
     if (!w) return;
     if (objc_getAssociatedObject(w, &kDSAFloatingTag)) return;
+    if (dispatching) return;
 
     UIButton *pill = [UIButton buttonWithType:UIButtonTypeSystem];
     [pill setTitle:@"🤖 智能体" forState:UIControlStateNormal];
@@ -99,9 +107,15 @@ static void DSAInstallFloatingEntry(void) {
 }
 
 #pragma mark - 对外
+static void DSAEnsureEntryUnsafe(UIView *view);
 
 void DSAEnsureEntry(UIView *view) {
     if (!view || !view.window) return;
+    @try { DSAEnsureEntryUnsafe(view); }
+    @catch (__unused NSException *e) { NSLog(@"[DSAgent] entry failed: %@", e.reason); }
+}
+
+static void DSAEnsureEntryUnsafe(UIView *view) {
 
     // A：表格 header
     if ([view isKindOfClass:[UITableView class]]) {
@@ -118,11 +132,14 @@ void DSAEnsureEntry(UIView *view) {
             }
         }
     }
-    // 没有合适空位 → 保证悬浮入口在
-    DSAInstallFloatingEntry();
+    // 没有合适空位 → 交给「页面出现」时机去挂悬浮入口（不在布局回调里做）
 }
 
-/// 启动/切换页面时调用：保证悬浮入口存在（幂等）
+/// 启动/切换页面时调用：保证悬浮入口存在（幂等、整块包 @try）
 void DSAEnsureFloatingEntry(void) {
-    DSAInstallFloatingEntry();
+    if (dispatching) return;
+    dispatching = YES;
+    @try { DSAInstallFloatingEntry(); }
+    @catch (__unused NSException *e) { NSLog(@"[DSAgent] floating failed: %@", e.reason); }
+    @finally { dispatching = NO; }
 }
