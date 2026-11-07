@@ -316,7 +316,33 @@ void DSAShowSidebar(void) {
 
 
 @implementation DSAEntryProxy
-+ (void)tapped { DSAShowSidebar(); }
+
+/// 点入口条 → 优先打开 App 原生侧边栏（智能体区块在里面）；找不到再退回自绘面板
++ (void)tapped {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *w = DSAKeyWindow();
+        // 找 accessibilityLabel = "open_sidebar" 的按钮（真机 diag 实测存在）
+        __block UIView *hit = nil;
+        NSMutableArray *stack = [NSMutableArray arrayWithObject:(UIView *)w];
+        int guard = 0;
+        while (stack.count && guard++ < 4000) {
+            UIView *v = stack.lastObject;
+            [stack removeLastObject];
+            for (UIView *s2 in v.subviews) [stack addObject:s2];
+            if (!v.window || !v.isUserInteractionEnabled) continue;
+            NSString *lab = v.accessibilityLabel ?: @"";
+            if ([lab isEqualToString:@"open_sidebar"] || [lab containsString:@"sidebar"]) { hit = v; break; }
+        }
+        if (hit && [hit isKindOfClass:[UIControl class]]) {
+            [(UIControl *)hit sendActionsForControlEvents:UIControlEventTouchUpInside];
+            DSADiagLog(@"[ENTRY] opened native sidebar via open_sidebar");
+            return;
+        }
+        DSADiagLog(@"[ENTRY] open_sidebar not found, fallback to own panel");
+        DSAShowSidebar();
+    });
+}
+
 + (void)tapMask { DSAHideSidebar(); }
 + (void)closePanel { DSAHideSidebar(); }
 @end

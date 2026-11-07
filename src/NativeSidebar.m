@@ -45,6 +45,7 @@ static UIView *DSAMakeAgentSection(void) {
     // 每个智能体一行
     for (DSAAgent *ag in agents) {
         UIControl *row = [[UIControl alloc] initWithFrame:CGRectZero];
+        row.translatesAutoresizingMaskIntoConstraints = NO;
         row.tag = 91000;
         [row addTarget:[DSAEntryProxy class] action:@selector(agentRowTapped:)
        forControlEvents:UIControlEventTouchUpInside];
@@ -52,6 +53,7 @@ static UIView *DSAMakeAgentSection(void) {
         row.accessibilityValue = ag.agentId;
 
         UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
+        lab.translatesAutoresizingMaskIntoConstraints = NO;
         lab.text = [NSString stringWithFormat:@"· %@", ag.name];
         lab.font = [UIFont systemFontOfSize:15];
         lab.textColor = [UIColor labelColor];
@@ -67,10 +69,12 @@ static UIView *DSAMakeAgentSection(void) {
 
     // 新建按钮
     UIControl *add = [[UIControl alloc] initWithFrame:CGRectZero];
+    add.translatesAutoresizingMaskIntoConstraints = NO;
     [add addTarget:[DSAEntryProxy class] action:@selector(newAgentTapped:)
   forControlEvents:UIControlEventTouchUpInside];
     add.accessibilityLabel = @"新建智能体";
     UILabel *addLab = [[UILabel alloc] initWithFrame:CGRectZero];
+    addLab.translatesAutoresizingMaskIntoConstraints = NO;
     addLab.text = @"＋ 新建智能体";
     addLab.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
     addLab.textColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1];
@@ -95,6 +99,8 @@ static UIView *DSAMakeAgentSection(void) {
         [stack.bottomAnchor constraintEqualToAnchor:sec.bottomAnchor],
     ]];
     sec.translatesAutoresizingMaskIntoConstraints = NO;
+    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section built rows=%lu",
+                 (unsigned long)([DSAStore shared].agents.count + 1)]);
     return sec;
 }
 
