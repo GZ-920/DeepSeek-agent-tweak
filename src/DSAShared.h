@@ -40,6 +40,7 @@ void DSAResetInjection(void);
 void DSASetFillDelay(NSTimeInterval sec);
 void DSAStartInjectionPolling(void);
 void DSADiagLog(NSString *line);
+void DSALogVersion(void);
 // Sidebar.m
 void DSAShowSidebar(void);
 void DSAHideSidebar(void);

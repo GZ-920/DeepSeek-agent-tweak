@@ -79,3 +79,8 @@ void DSADiagLog(NSString *line) {
         [[old stringByAppendingFormat:@"%@\n", line] writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
     } @catch (__unused NSException *e) {}
 }
+
+/// 启动时写版本标记（判断手机上跑的是哪一版）
+void DSALogVersion(void) {
+    DSADiagLog(@"[VERSION] v0.1.29");
+}

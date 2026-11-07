@@ -105,6 +105,7 @@ static UIView *DSAFindListByTree(void) {
     @autoreleasepool {
         NSLog(@"[DSAgent] constructor running");
         [[DSAStore shared] loadIfNeeded];
+        DSALogVersion();
 #ifdef DSA_SELFTEST
         DSAInstallSelfTest();
 #endif

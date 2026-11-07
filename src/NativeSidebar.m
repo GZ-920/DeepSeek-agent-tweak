@@ -106,26 +106,56 @@ static UIView *DSAMakeAgentSection(void) {
 
 #pragma mark - 找原生侧边栏
 
+/// 判断视图是否「露在屏幕内、宽度像抽屉」
+static BOOL DSALooksLikeOpenDrawer(UIView *v, UIWindow *w) {
+    if (!v || !v.window || v.hidden || v.alpha < 0.05) return NO;
+    CGFloat vw = v.bounds.size.width;
+    if (vw <= 40) return NO;
+    if (vw >= w.bounds.size.width * 0.95) return NO;      // 全屏 = 不是抽屉
+    CGRect r = [v convertRect:v.bounds toView:nil];
+    if (r.origin.x + r.size.width <= 4) return NO;         // 完全在屏幕左边外
+    if (r.origin.x < -vw * 0.5) return NO;                 // 大半在屏幕外 = 收起
+    return YES;
+}
+
+/// 找原生侧边栏容器。
+/// 注意：Swift UIViewController 的 view 类名就是 "UIView"（不含 Sidebar），
+/// 带 Sidebar 字样的往往是装饰子视图 → 所以找到后要**向上找**真正的抽屉容器。
 static UIView *DSAFindNativeSidebar(UIWindow *w) {
     if (!w) return nil;
     NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
     int guard = 0;
-    UIView *best = nil;
+    UIView *seed = nil;
     while (stack.count && guard++ < 4000) {
         UIView *v = stack.lastObject;
         [stack removeLastObject];
         for (UIView *s in v.subviews) [stack addObject:s];
         if (!v.window || v.hidden || v.alpha < 0.05) continue;
-        NSString *c = NSStringFromClass([v class]);
-        if (![c containsString:@"Sidebar"]) continue;
-        if (v.bounds.size.width <= 0 || v.bounds.size.width >= w.bounds.size.width * 0.9) continue;
-        // 必须真的露在屏幕内（收起状态的抽屉 x 是负数，在屏幕外）
-        CGRect r = [v convertRect:v.bounds toView:nil];
-        if (r.origin.x < -v.bounds.size.width * 0.5) continue;   // 大半在屏幕外 = 收起
-        if (r.origin.x + r.size.width <= 0) continue;
-        if (!best || v.bounds.size.width > best.bounds.size.width) best = v;
+        if ([NSStringFromClass([v class]) containsString:@"Sidebar"]) { seed = v; break; }
     }
-    return best;
+    if (!seed) return nil;
+
+    // 从 seed 向上找：尺寸像抽屉（宽 100~95% 屏宽）且露在屏幕内的最高祖先
+    UIView *best = nil;
+    UIView *p = seed;
+    for (int i = 0; i < 8 && p; i++, p = p.superview) {
+        if (DSALooksLikeOpenDrawer(p, w)) best = p;     // 越往上越可能是整块抽屉
+    }
+    if (best) return best;
+
+    // 向上都太大/不可见 → 退回 seed 本身（若它自己像抽屉）
+    if (DSALooksLikeOpenDrawer(seed, w)) return seed;
+
+    // seed 自己不可见（装饰件可能常驻）→ 再向下找一个像抽屉的
+    NSMutableArray *st2 = [NSMutableArray arrayWithObject:seed];
+    int g2 = 0;
+    while (st2.count && g2++ < 3000) {
+        UIView *v = st2.lastObject;
+        [st2 removeLastObject];
+        for (UIView *s2 in v.subviews) [st2 addObject:s2];
+        if (DSALooksLikeOpenDrawer(v, w) && v.bounds.size.width > 100) return v;
+    }
+    return nil;
 }
 
 #pragma mark - 插入
@@ -246,7 +276,11 @@ void DSAEnsureNativeSidebar(void) {
     @try {
         UIWindow *w = DSAKeyWindow();
         UIView *sb = DSAFindNativeSidebar(w);
-        if (!sb) return;
+        if (!sb) {
+            static BOOL logged = NO;
+            if (!logged) { logged = YES; DSADiagLog(@"[SIDEBAR] not visible yet (waiting for open)"); }
+            return;
+        }
         DSAInsertSection(sb);
     } @catch (__unused NSException *e) {
         DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] exception %@", e.reason]);
