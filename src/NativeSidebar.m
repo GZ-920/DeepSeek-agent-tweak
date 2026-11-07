@@ -167,12 +167,16 @@ static UIView *DSAFindNativeSidebar(UIWindow *w) {
         for (UIView *s in v.subviews) [stack addObject:s];
         if (!v.window || v.hidden || v.alpha < 0.05) continue;
         NSString *c = NSStringFromClass([v class]);
-        if ([c containsString:@"SearchBar"] || [c containsString:@"SessionList"]) {
-            if (!seed) seed = v;
-        } else if ([c containsString:@"Sidebar"]) {
-            if (!seedAny) seedAny = v;
+        if (v.bounds.size.width < 100) continue;              // 太小的不算（按钮/装饰件）
+        if ([c containsString:@"MultiSelect"]) continue;      // 多选底栏不是侧边栏
+        if ([c containsString:@"SearchBar"]) {
+            if (!seed) seed = v;                              // 最优先：真正的搜索栏
+        } else if ([c containsString:@"SessionList"] && !seed) {
+            seed = v;
+        } else if ([c containsString:@"Sidebar"] && !seedAny) {
+            seedAny = v;
         }
-        if (seed) break;
+        if (seed && [NSStringFromClass([seed class]) containsString:@"SearchBar"]) break;
     }
     if (!seed) seed = seedAny;
     if (!seed) {
@@ -305,27 +309,39 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         CGFloat delta = want - cur;
         DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] cur=%.0f want=%.0f delta=%.0f", cur, want, delta]);
         if (delta > 1) {
-            BOOL pushed = NO;
-            // 在多个容器里找「钉住 below.top 的等式约束」
-            NSArray *owners = @[ below.superview ?: (id)[NSNull null], host, below ];
-            for (id owner in owners) {
-                if (![owner isKindOfClass:[UIView class]]) continue;
-                UIView *ov = (UIView *)owner;
-                for (NSLayoutConstraint *c in ov.constraints) {
-                    if (c.firstItem == below && c.firstAttribute == NSLayoutAttributeTop &&
-                        c.relation == NSLayoutRelationEqual) {
-                        c.constant += delta; pushed = YES;
-                        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] pushed in %@ constant=%.0f",
-                                     NSStringFromClass([ov class]), c.constant]);
-                        break;
+            // ★ 累计下推：列表可能已被 NativeInsert 推过（133），只补差额，避免推两次
+            static NSString *const kTot = @"DSATotalPush";   // 与 NativeInsert 共用
+            NSNumber *prevObj = objc_getAssociatedObject(below, (__bridge const void *)kTot);
+            CGFloat already = prevObj ? prevObj.doubleValue : 0;
+            CGFloat add = delta - already;
+            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] need total=%.0f already=%.0f add=%.0f",
+                         delta, already, add]);
+            if (add <= 1) {
+                DSADiagLog(@"[SIDEBAR] already pushed enough, skip");
+            } else {
+                BOOL pushed = NO;
+                NSArray *owners = @[ below.superview ?: (id)[NSNull null], host, below ];
+                for (id owner in owners) {
+                    if (![owner isKindOfClass:[UIView class]]) continue;
+                    UIView *ov = (UIView *)owner;
+                    for (NSLayoutConstraint *c in ov.constraints) {
+                        if (c.firstItem == below && c.firstAttribute == NSLayoutAttributeTop &&
+                            c.relation == NSLayoutRelationEqual) {
+                            c.constant += add; pushed = YES;
+                            objc_setAssociatedObject(below, (__bridge const void *)kTot, @(already + add),
+                                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] pushed in %@ +%.0f constant=%.0f",
+                                         NSStringFromClass([ov class]), add, c.constant]);
+                            break;
+                        }
                     }
+                    if (pushed) break;
                 }
-                if (pushed) break;
-            }
-            if (!pushed) {
-                DSADiagLog(@"[SIDEBAR] cannot push list down");
-                [sec removeFromSuperview];
-                return NO;
+                if (!pushed) {
+                    DSADiagLog(@"[SIDEBAR] cannot push list down");
+                    [sec removeFromSuperview];
+                    return NO;
+                }
             }
         }
     } else {

@@ -222,13 +222,36 @@ BOOL DSAInsertIntoNativeList(void) {
                     return NO;
                 }
                 CGFloat c0 = hitC.constant;
-                hitC.constant += need;
+                // 与 NativeSidebar 共用累计 key，避免同一列表被推两次
+                static NSString *const kTot = @"DSATotalPush";
+                NSNumber *prev = objc_getAssociatedObject(target, (__bridge const void *)kTot);
+                CGFloat already = prev ? prev.doubleValue : 0;
+                CGFloat add = need - already;
+                if (add <= 1) add = 0;
+                DSADiagLog([NSString stringWithFormat:@"[NATIVE] need=%.0f already=%.0f add=%.0f",
+                             need, already, add]);
+                if (add == 0) {
+                    DSADiagLog(@"[NATIVE] already pushed enough, skip");
+                    [shost bringSubviewToFront:bar];
+                    objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    objc_setAssociatedObject(shost, &kDSANativeBarTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    objc_setAssociatedObject(w, &kDSANativeHostTag, shost, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    DSADiagLog(@"[NATIVE] inserted BELOW SEARCH (no extra push)");
+                    DSARemoveFloatingPill();
+                    DSARemoveProbePill();
+                    return YES;
+                }
+                hitC.constant += add;
+                objc_setAssociatedObject(target, (__bridge const void *)kTot, @(already + add),
+                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                 [shost layoutIfNeeded];
                 CGFloat hAfter = search.bounds.size.height;
                 DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed by %.0f; search h %.0f -> %.0f",
-                             need, hBefore, hAfter]);
+                             add, hBefore, hAfter]);
                 if (fabs(hAfter - hBefore) > 12) {          // 搜索框被拉伸了 → 回滚
                     hitC.constant = c0;
+                    objc_setAssociatedObject(target, (__bridge const void *)kTot, @(already),
+                                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                     [shost layoutIfNeeded];
                     DSADiagLog(@"[NATIVE] search bar stretched → rolled back");
                     [bar removeFromSuperview];
@@ -239,6 +262,7 @@ BOOL DSAInsertIntoNativeList(void) {
         [shost bringSubviewToFront:bar];
         objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(shost, &kDSANativeBarTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(w, &kDSANativeHostTag, shost, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         DSADiagLog([NSString stringWithFormat:@"[NATIVE] inserted BELOW SEARCH on %@ (shost %@)",
                      NSStringFromClass([search class]), NSStringFromClass([shost class])]);
         DSARemoveFloatingPill();
