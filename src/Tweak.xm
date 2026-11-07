@@ -1,16 +1,16 @@
 //
 //  Tweak.xm — 智能体功能注入入口
 //
-//  入口插入采用「多属性名候选 + 视图树兜底」：
-//    1. 先试 App 里出现过的属性名（sessionListTable / sessionList / sessionCols...）
-//    2. 都不中时，扫描屏幕上的 UITableView / UICollectionView，
-//       取「高度最大且不是消息流」的那个当作会话列表
+//  所有调试开关都是「可独立关闭」的，方便闪退时二分定位：
+//    DSA_SELFTEST   —— 红色角标 + 写沙盒标记
+//    DSA_SCAN       —— 扫描页面属性名，写入 Documents/DSAgent_scan.txt
+//    DSA_UI_FORCE   —— 注入 4 秒后强制弹出智能体页
+//    DSA_TREE_FALLBACK / DSA_TABLE_HOOK —— 视图树兜底 / UITableView layout 兜底
 //
 #import <UIKit/UIKit.h>
 #import "AgentStore.h"
 #import "DSAShared.h"
 
-// 候选属性名（App 升级改名时往这里加）
 static NSArray *DSASessionListKeys(void) {
     static NSArray *keys;
     static dispatch_once_t once;
@@ -22,7 +22,6 @@ static NSArray *DSASessionListKeys(void) {
     return keys;
 }
 
-/// 从某个 VC 上按候选属性名找列表视图
 static UIView *DSAFindListByKey(id vc) {
     for (NSString *k in DSASessionListKeys()) {
         @try {
@@ -33,39 +32,36 @@ static UIView *DSAFindListByKey(id vc) {
     return nil;
 }
 
-/// 视图树兜底：找屏幕上最像「会话列表」的滚动视图
+#ifdef DSA_TREE_FALLBACK
 static UIView *DSAFindListByTree(void) {
-    UIWindow *w = DSAKeyWindow();
-    if (!w) return nil;
-    __block UIView *best = nil;
-    __block CGFloat bestH = 0;
-    NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
-    while (stack.count) {
-        UIView *v = stack.lastObject;
-        [stack removeLastObject];
-        for (UIView *s in v.subviews) [stack addObject:s];
-        if (!v.window) continue;
-        BOOL isList = [v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]];
-        if (!isList) continue;
-        // 排除消息流（通常占满整屏宽度且高度大于屏高 0.7，且 cell 是聊天气泡）；
-        // 这里用「宽度 < 屏宽 0.94」来识别侧栏列表
-        CGFloat h = v.frame.size.height;
-        BOOL narrower = v.frame.size.width < w.bounds.size.width * 0.94;
-        if (narrower && h > bestH) { best = v; bestH = h; }
-    }
-    return best;
+    @try {
+        UIWindow *w = DSAKeyWindow();
+        if (!w) return nil;
+        UIView *best = nil;
+        CGFloat bestH = 0;
+        NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
+        int guard = 0;
+        while (stack.count && guard++ < 4000) {
+            UIView *v = stack.lastObject;
+            [stack removeLastObject];
+            for (UIView *s in v.subviews) [stack addObject:s];
+            if (!v.window) continue;
+            BOOL isList = [v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]];
+            if (!isList) continue;
+            CGFloat h = v.frame.size.height;
+            if (v.frame.size.width < w.bounds.size.width * 0.94 && h > bestH) { best = v; bestH = h; }
+        }
+        return best;
+    } @catch (__unused NSException *e) { return nil; }
 }
+#endif
 
 %hook UIViewController
 
 - (void)viewDidLayoutSubviews {
     %orig;
     UIView *list = DSAFindListByKey(self);
-    if (!list) return;
-#ifdef DSA_SELFTEST
-    DSAScanControls(self);
-#endif
-    DSAEnsureEntry(list);
+    if (list) DSAEnsureEntry(list);
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -85,10 +81,9 @@ static UIView *DSAFindListByTree(void) {
     }
 }
 
-// 侧栏展开/主页出现时再兜底一次（属性名全不对时的最后一招）
 - (void)viewWillAppear:(BOOL)animated {
     %orig;
-#ifdef DSA_SELFTEST
+#ifdef DSA_SCAN
     DSAScanControls(self);
 #endif
     NSString *cls = NSStringFromClass([self class]);
@@ -96,7 +91,9 @@ static UIView *DSAFindListByTree(void) {
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
                        dispatch_get_main_queue(), ^{
             UIView *list = DSAFindListByKey(self);
+#ifdef DSA_TREE_FALLBACK
             if (!list) list = DSAFindListByTree();
+#endif
             if (list) DSAEnsureEntry(list);
         });
     }
@@ -104,7 +101,7 @@ static UIView *DSAFindListByTree(void) {
 
 %end
 
-// 兜底：任何滚动视图完成布局时，若页面里有 Sidebar 类 VC，再尝试一次
+#ifdef DSA_TABLE_HOOK
 %hook UITableView
 - (void)layoutSubviews {
     %orig;
@@ -114,6 +111,7 @@ static UIView *DSAFindListByTree(void) {
     }
 }
 %end
+#endif
 
 %ctor {
     @autoreleasepool {

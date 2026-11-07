@@ -13,7 +13,8 @@ DSAAgent_FILES = src/Tweak.xm \
                  src/Inject.m \
                  src/Trigger.m \
                  src/SelfTest.m
-DSAAgent_CFLAGS = -fobjc-arc -DDSA_SELFTEST=1 -DDSA_UI_FORCE=1 -I src -Wno-unused-function -Wno-deprecated-declarations
+DSAAgent_CFLAGS = -fobjc-arc -I src -Wno-unused-function -Wno-deprecated-declarations \
+                  -DDSA_SELFTEST=1 -DDSA_TREE_FALLBACK=1 -DDSA_TABLE_HOOK=1
 DSAAgent_FRAMEWORKS = UIKit Foundation
 DSAAgent_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
 
