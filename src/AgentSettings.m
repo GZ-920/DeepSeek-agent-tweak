@@ -14,12 +14,12 @@ void DSADiagLog(NSString *line);
 
 #pragma mark - 编辑页（内联表单）
 
-@interface DSAgentFormController : UIViewController <UITextFieldDelegate, UITextViewDelegate>
+@interface DSAAgentFormController : UIViewController <UITextFieldDelegate, UITextViewDelegate>
 @property (nonatomic, strong) DSAAgent *agent;   // nil = 新建
 @property (nonatomic, copy) void (^onChanged)(void);
 @end
 
-@implementation DSAgentFormController {
+@implementation DSAAgentFormController {
     UITextField *_nameField;
     UITextView *_promptView;
 }
@@ -147,10 +147,10 @@ void DSADiagLog(NSString *line);
 
 #pragma mark - 设置列表
 
-@interface DSAgentSettingsController : UIViewController <UITableViewDataSource, UITableViewDelegate>
+@interface DSAAgentSettingsController : UIViewController <UITableViewDataSource, UITableViewDelegate>
 @end
 
-@implementation DSAgentSettingsController {
+@implementation DSAAgentSettingsController {
     UITableView *_table;
     NSArray<DSAAgent *> *_agents;
 }
@@ -215,7 +215,7 @@ void DSADiagLog(NSString *line);
 
 - (void)tableView:(UITableView *)tv didSelectRowAtIndexPath:(NSIndexPath *)ip {
     [tv deselectRowAtIndexPath:ip animated:YES];
-    DSAgentFormController *form = [DSAAgentFormController new];
+    DSAAgentFormController *form = [DSAAgentFormController new];
     form.agent = (ip.section == 0) ? _agents[(NSUInteger)ip.row] : nil;
     [self.navigationController pushViewController:form animated:YES];
 }
@@ -233,7 +233,7 @@ void DSAShowSettings(void) {
         // 已经在设置页里就不重复弹
         if ([top isKindOfClass:[DSAAgentSettingsController class]]) return;
 
-        DSAgentSettingsController *page = [DSAAgentSettingsController new];
+        DSAAgentSettingsController *page = [DSAAgentSettingsController new];
         UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:page];
         if (@available(iOS 13.0, *)) {
             nav.modalPresentationStyle = UIModalPresentationFormSheet;
