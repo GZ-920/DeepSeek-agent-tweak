@@ -49,9 +49,11 @@ static UIView *DSAMakeAgentSection(void) {
         l.text = t;
         l.font = [UIFont systemFontOfSize:fsz - 2 weight:UIFontWeightSemibold];
         l.textColor = [UIColor secondaryLabelColor];
-        [l.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:lead];
-        [l.trailingAnchor constraintEqualToAnchor:stack.trailingAnchor constant:-lead];
-        [l.heightAnchor constraintEqualToConstant:rowH * 0.6].active = YES;
+        [NSLayoutConstraint activateConstraints:@[
+            [l.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:lead],
+            [l.trailingAnchor constraintEqualToAnchor:stack.trailingAnchor constant:-lead],
+            [l.heightAnchor constraintEqualToConstant:rowH * 0.6],
+        ]];
         return l;
     };
 
