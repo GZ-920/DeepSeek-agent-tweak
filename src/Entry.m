@@ -12,6 +12,13 @@
 #import "DSAShared.h"
 #import "AgentListController.h"
 
+// 代理类统一定义在 Sidebar.m
+@interface DSAEntryProxy : NSObject
++ (void)tapped;
++ (void)tapMask;
++ (void)closePanel;
+@end
+
 static char kDSAEntryTag;
 static char kDSAFloatingTag;
 static BOOL dispatching = NO;
@@ -20,25 +27,6 @@ static BOOL DSAFloatingDisabled(void) {
     dispatch_once(&once, ^{ v = [[NSUserDefaults standardUserDefaults] boolForKey:@"DSAFloatingDisabled"]; });
     return v;
 }
-
-@interface DSAEntryProxy : NSObject
-+ (void)tapped;
-@end
-
-@implementation DSAEntryProxy
-+ (void)tapped {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
-        while ([top isKindOfClass:[UIAlertController class]] && top.presentedViewController)
-            top = top.presentedViewController;
-        if (!top) return;
-        if ([top isKindOfClass:[DSAAgentListController class]]) return;
-        if ([top isKindOfClass:[UINavigationController class]] &&
-            [[(UINavigationController *)top topViewController] isKindOfClass:[DSAAgentListController class]]) return;
-        [top presentViewController:[DSAAgentListController presentedRoot] animated:YES completion:nil];
-    });
-}
-@end
 
 #pragma mark - A. 作为表格 header
 
