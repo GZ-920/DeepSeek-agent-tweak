@@ -107,6 +107,7 @@ static void DSABackToRoot(void) {
 
 void DSAOpenNewChatWithAgent(DSAAgent *agent) {
     if (!agent) return;
+    DSAResetInjection();
     DSADiagLog([NSString stringWithFormat:@"[NEWCHAT] agent=%@ pending set", agent.name]);
     [[DSAStore shared] setPendingAgentId:agent.agentId];
 

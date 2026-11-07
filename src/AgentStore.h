@@ -38,6 +38,7 @@
 // —— 防重复注入 ——
 - (BOOL)sessionInjected:(NSString *)sessionId;
 - (void)markSessionInjected:(NSString *)sessionId;
+- (void)uninjectMark:(NSString *)sessionId;   // 撤销标记（重置用）
 
 // —— 待启动智能体 ——
 - (NSString *)pendingAgentId;

@@ -170,6 +170,12 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
     [self synchronize];
 }
 
+- (void)uninjectMark:(NSString *)sessionId {
+    if (!sessionId.length) return;
+    [_injected removeObjectForKey:sessionId];
+    [self synchronize];
+}
+
 #pragma mark - pending
 
 - (NSString *)pendingAgentId { return _pendingAgentId; }
