@@ -152,7 +152,7 @@ BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat moveBy, UIView 
     if (searchBar) {
         CGFloat hAfter = searchBar.bounds.size.height;
         DSADiagLog([NSString stringWithFormat:@"[PUSH] search h %.0f -> %.0f", hBefore, hAfter]);
-        if (fabs(hAfter - hBefore) > 12) {           // 搜索框被拉伸 → 回滚
+        if (fabs(hAfter - hBefore) > 2) {            // 搜索框只要变高就回滚（防小步累积）
             hitC.constant = c0;
             [container layoutIfNeeded];
             DSADiagLog(@"[PUSH] search bar stretched → rolled back");

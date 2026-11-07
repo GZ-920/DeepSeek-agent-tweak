@@ -12,6 +12,7 @@
 #import "AgentStore.h"
 
 static char kDSASidebarSectionTag;
+static BOOL sSidebarPushed = NO;   // ★ 只推一次，避免每秒重复推导致搜索框不断变大
 
 @interface DSAEntryProxy : NSObject
 + (void)tapped;
@@ -297,16 +298,27 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] placed at %.0f,%.0f %.0fx%.0f (anchor %@)",
                  sidebarX, top, width, h, anchor ? NSStringFromClass([anchor class]) : @"nil"]);
 
-    // 列表下推（共用推送），失败也不移除区块
-    UIView *list = DSAFindSessionListView();
-    if (list) {
-        CGRect lr = [list convertRect:list.bounds toView:nil];
-        CGFloat need = (top + h + 8) - lr.origin.y;
-        if (need > 1) {
-            UIView *container = list.superview ?: sidebar;
-            if (!DSAPushListToTotal(list, container, need, nil)) {
-                DSADiagLog(@"[SIDEBAR] push failed → section stays on window");
+    // ★ 只在第一次放置时推送一次。
+    // 之前每秒都按「搜索框下沿」重算目标，而搜索框会随推送下移 → 目标不断上移 → 正反馈，
+    // 表现就是「搜索框每秒变大一点」。
+    if (!sSidebarPushed) {
+        UIView *list = DSAFindSessionListView();
+        if (list) {
+            CGRect lr = [list convertRect:list.bounds toView:nil];
+            CGFloat need = (top + h + 8) - lr.origin.y;
+            if (need > 1) {
+                UIView *container = list.superview ?: sidebar;
+                if (DSAPushListToTotal(list, container, need, nil)) {
+                    sSidebarPushed = YES;
+                    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] pushed once by %.0f", need]);
+                } else {
+                    DSADiagLog(@"[SIDEBAR] push failed → section stays, will retry next tick");
+                }
+            } else {
+                sSidebarPushed = YES;   // 本来就有空间，不用推
             }
+        } else {
+            sSidebarPushed = YES;
         }
     }
     return YES;
@@ -320,6 +332,7 @@ void DSARefreshNativeSidebar(void) {
         if (sec) {
             [sec removeFromSuperview];
             objc_setAssociatedObject(w, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            sSidebarPushed = NO;
             DSADiagLog(@"[SIDEBAR] section cleared for rebuild");
         }
     });
