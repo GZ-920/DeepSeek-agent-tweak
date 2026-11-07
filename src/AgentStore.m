@@ -23,7 +23,7 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
     DSAAgent *a = [DSAAgent new];
     a.agentId = d[@"id"] ?: [[NSUUID UUID] UUIDString];
     a.name = d[@"name"] ?: @"智能体";
-    a.emoji = d[@"emoji"] ?: @"🤖";
+    a.emoji = d[@"emoji"] ?: @"";
     a.systemPrompt = d[@"systemPrompt"] ?: @"";
     a.greeting = d[@"greeting"] ?: @"";
     a.createdAt = [d[@"createdAt"] doubleValue];
@@ -32,7 +32,7 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
 - (NSDictionary *)dictionaryRepresentation {
     return @{ @"id": self.agentId ?: @"",
               @"name": self.name ?: @"",
-              @"emoji": self.emoji ?: @"🤖",
+              @"emoji": self.emoji ?: @"",
               @"systemPrompt": self.systemPrompt ?: @"",
               @"greeting": self.greeting ?: @"",
               @"createdAt": @(self.createdAt) };

@@ -122,7 +122,8 @@ static UIView *DSAFindListByTree(void) {
             NSTimer *t = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
                                                           block:^(NSTimer *timer) {
                 DSAInjectTick();        // 提示词注入
-                DSAEnsureNativeEntry(); // 原生列表入口（找到会话列表就插，插过就跳过）
+                DSAEnsureNativeEntry();     // 原生列表入口
+                DSAEnsureNativeSidebar();  // 原生侧边栏区块
             }];
             (void)t;
         });

@@ -158,15 +158,14 @@ static char kDSAMaskTag;
     NSString *kind = row[@"kind"];
     if ([kind isEqualToString:@"agent"]) {
         DSAAgent *ag = row[@"agent"];
-        cell.textLabel.text = [NSString stringWithFormat:@"%@  %@", ag.emoji ?: @"🤖", ag.name];
+        cell.textLabel.text = [NSString stringWithFormat:@"%@  %@", ag.emoji ?: @"", ag.name];
         NSString *p = [ag.systemPrompt stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
         cell.detailTextLabel.text = p.length > 30 ? [[p substringToIndex:30] stringByAppendingString:@"…"] : p;
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else if ([kind isEqualToString:@"session"]) {
         DSAAgent *ag = row[@"agent"];
         NSString *sid = row[@"session"];
-        cell.textLabel.text = [NSString stringWithFormat:@"%@  %@",
-                               ag.emoji ?: @"🕘", [sid substringToIndex:MIN((NSUInteger)12, sid.length)]];
+        cell.textLabel.text = [sid substringToIndex:MIN((NSUInteger)12, sid.length)];
         cell.detailTextLabel.text = [NSString stringWithFormat:@"所属：%@", ag.name];
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     } else {
@@ -235,7 +234,7 @@ static char kDSAMaskTag;
         if (!name.length || !prompt.length) { DSAToast(@"名字和提示词都不能为空"); return; }
         DSAAgent *a = [DSAAgent new];
         a.agentId = [[NSUUID UUID] UUIDString];
-        a.name = name; a.systemPrompt = prompt; a.emoji = @"🤖";
+        a.name = name; a.systemPrompt = prompt; a.emoji = @"";
         a.createdAt = [[NSDate date] timeIntervalSince1970];
         [[DSAStore shared] saveAgent:a];
         [self rebuild];
@@ -249,7 +248,7 @@ static char kDSAMaskTag;
         if (!name.length || !prompt.length) { DSAToast(@"名字和提示词都不能为空"); return; }
         DSAAgent *a = [DSAAgent new];
         a.agentId = [[NSUUID UUID] UUIDString];
-        a.name = name; a.systemPrompt = prompt; a.emoji = @"🤖";
+        a.name = name; a.systemPrompt = prompt; a.emoji = @"";
         a.createdAt = [[NSDate date] timeIntervalSince1970];
         [[DSAStore shared] saveAgent:a];
         [self rebuild];

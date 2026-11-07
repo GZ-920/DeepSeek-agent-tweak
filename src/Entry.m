@@ -43,7 +43,7 @@ static UIView *DSAMakeEntryBar(void) {
 
     UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
     lab.translatesAutoresizingMaskIntoConstraints = NO;
-    lab.text = @"🤖  智能体";
+    lab.text = @"智能体";
     lab.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
     lab.textColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
     lab.userInteractionEnabled = NO;

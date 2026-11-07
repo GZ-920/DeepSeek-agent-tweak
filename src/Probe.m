@@ -78,7 +78,7 @@ static void DSAInstallPillOnWindow(UIWindow *w) {
    forControlEvents:UIControlEventTouchUpInside];
 
     UILabel *l = [[UILabel alloc] initWithFrame:pill.bounds];
-    l.text = @"🤖 智能体";
+    l.text = @"智能体";
     l.textColor = UIColor.whiteColor;
     l.textAlignment = NSTextAlignmentCenter;
     l.font = [UIFont boldSystemFontOfSize:13];

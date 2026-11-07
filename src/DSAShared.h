@@ -23,6 +23,8 @@ void DSAEnsureEntry(UIView *view);
 void DSAEnsureFloatingEntry(void);
 // NativeInsert.m
 void DSAEnsureNativeEntry(void);
+// NativeSidebar.m
+void DSAEnsureNativeSidebar(void);
 void DSARemoveFloatingPill(void);
 // Inject.m
 BOOL DSASendPrompt(NSString *prompt);

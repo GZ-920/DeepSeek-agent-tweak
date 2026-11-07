@@ -148,7 +148,7 @@ static UILabel *DSAHeaderLabel(NSString *text) {
             cell.detailTextLabel.text = @"设定名字 + 首条系统提示词";
         } else {
             DSAAgent *a = agents[(NSUInteger)ip.row];
-            cell.textLabel.text = [NSString stringWithFormat:@"%@  %@", a.emoji ?: @"🤖", a.name];
+            cell.textLabel.text = [NSString stringWithFormat:@"%@  %@", a.emoji ?: @"", a.name];
             NSString *p = [a.systemPrompt stringByReplacingOccurrencesOfString:@"\n" withString:@" "];
             cell.detailTextLabel.text = p.length > 36 ? [[p substringToIndex:36] stringByAppendingString:@"…"] : p;
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -157,7 +157,7 @@ static UILabel *DSAHeaderLabel(NSString *text) {
         NSDictionary *row = _chatRows[(NSUInteger)ip.row];
         DSAAgent *a = row[@"agent"];
         NSUInteger n = [(NSArray *)row[@"sessionIds"] count];
-        cell.textLabel.text = [NSString stringWithFormat:@"%@  %@", a.emoji ?: @"🕘", a.name];
+        cell.textLabel.text = a.name;
         cell.detailTextLabel.text = n ? [NSString stringWithFormat:@"%lu 个对话", (unsigned long)n]
                                       : @"暂无对话，点进去新建";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -231,7 +231,7 @@ static UILabel *DSAHeaderLabel(NSString *text) {
     _nameField.delegate = self;
 
     _emojiField = [UITextField new];
-    _emojiField.text = self.agent.emoji.length ? self.agent.emoji : @"🤖";
+    _emojiField.text = self.agent.emoji ?: @"";
     _emojiField.borderStyle = UITextBorderStyleRoundedRect;
     _emojiField.textAlignment = NSTextAlignmentCenter;
     _emojiField.delegate = self;
@@ -327,7 +327,7 @@ static UILabel *DSAHeaderLabel(NSString *text) {
     BOOL isNew = (self.agent == nil);
     DSAAgent *a = self.agent ?: [DSAAgent new];
     a.name = name;
-    a.emoji = _emojiField.text.length ? _emojiField.text : @"🤖";
+    a.emoji = _emojiField.text ?: @"";
     a.systemPrompt = prompt;
     a.greeting = [_greetingView.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (!a.agentId.length) a.agentId = [[NSUUID UUID] UUIDString];
