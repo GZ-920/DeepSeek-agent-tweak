@@ -12,7 +12,6 @@
 #import "AgentStore.h"
 
 static char kDSASidebarSectionTag;
-static char kDSASidebarPushedTag;
 
 @interface DSAEntryProxy : NSObject
 + (void)tapped;
