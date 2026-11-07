@@ -53,9 +53,9 @@ void DSAProbeWindows(void) {
 /// 真正的入口：挂在窗口右上角（这条链路已验证会执行）
 static void DSAInstallPillOnWindow(UIWindow *w) {
     if (!w) return;
-    if (objc_getAssociatedObject(w, @"DSAEntryPill")) {
-        [(UIView *)objc_getAssociatedObject(w, @"DSAEntryPill") superview] ?: nil;
-        [w bringSubviewToFront:(UIView *)objc_getAssociatedObject(w, @"DSAEntryPill")];
+    UIView *existing = objc_getAssociatedObject(w, @"DSAEntryPill");
+    if (existing) {
+        [w bringSubviewToFront:existing];
         return;
     }
     CGFloat safeTop = 0;
