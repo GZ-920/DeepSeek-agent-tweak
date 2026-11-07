@@ -44,10 +44,30 @@ static BOOL DSALooksLikeNewChat(UIView *v) {
     return NO;
 }
 
+/// 枚举界面上所有可能是「新建对话」的控件，写进日志供定位
+static void DSADumpCandidates(void) {
+    UIWindow *w = DSAKeyWindow();
+    if (!w) return;
+    __block int n = 0;
+    DSAWalkAll(w, ^(UIView *v) {
+        if (n > 40) return;
+        if (![v isUserInteractionEnabled] || !v.window) return;
+        if (![v isKindOfClass:[UIControl class]] && ![v isKindOfClass:[UIButton class]]) return;
+        NSString *cls = NSStringFromClass([v class]);
+        NSString *lab = v.accessibilityLabel ?: @"";
+        NSString *aid = v.accessibilityIdentifier ?: @"";
+        if (!lab.length && !aid.length && ![cls containsString:@"Button"]) return;
+        n++;
+        DSADiagLog([NSString stringWithFormat:@"[CAND] #%d %@ label=\"%s\" id=\"%s\"",
+                    n, cls, lab.UTF8String, aid.UTF8String]);
+    });
+}
+
 /// 在所有可见视图里找「新建对话」控件并触发
 static BOOL DSAClickNewChat(void) {
     UIWindow *w = DSAKeyWindow();
     if (!w) return NO;
+    DSADumpCandidates();
     __block UIView *hit = nil;
     DSAWalkAll(w, ^(UIView *v) {
         if (hit) return;
