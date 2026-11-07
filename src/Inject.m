@@ -19,6 +19,12 @@ void DSADiagLog(NSString *line);
 static int DSASendTries = 0;
 static const int kDSAMaxTries = 3;
 
+// —— 最早允许填充的时间戳（点完新建对话要等新会话打开）——
+static NSTimeInterval DSAFillNotBefore = 0;
+void DSASetFillDelay(NSTimeInterval sec) {
+    DSAFillNotBefore = [[NSDate date] timeIntervalSince1970] + sec;
+}
+
 static void DSAWalk(UIView *root, void (^block)(UIView *)) {
     if (!root) return;
     NSMutableArray *stack = [NSMutableArray arrayWithObject:root];
@@ -48,23 +54,57 @@ static UITextView *DSAFindPromptTextView(void) {
     return best;
 }
 
+/// 已知「不是发送」的控件（真机 diag 里出现过的），避免误点
+static BOOL DSAIsNotSend(NSString *cls, NSString *low) {
+    NSArray *bad = @[ @"uploadbutton", @"searchoperation", @"reasoningoperation",
+                      @"ttsbutton", @"sessiontts", @"open_sidebar", @"newchat",
+                      @"regenerate", @"textfield" ];
+    for (NSString *b in bad) if ([low containsString:b]) return YES;
+    (void)cls;
+    return NO;
+}
+
 static UIView *DSAFindSendControl(void) {
     UIWindow *w = DSAKeyWindow();
     if (!w) return nil;
     __block UIView *hit = nil;
+
+    // ① 名字/标签里带 send / 发送
     DSAWalk(w, ^(UIView *v) {
         if (hit || !v.window || !v.isUserInteractionEnabled) return;
         if (![v isKindOfClass:[UIControl class]]) return;
         NSString *cls = NSStringFromClass([v class]);
         NSString *label = v.accessibilityLabel ?: @"";
         NSString *aid = v.accessibilityIdentifier ?: @"";
-        if ([cls.lowercaseString containsString:@"send"] ||
-            [label containsString:@"发送"] ||
-            [label.lowercaseString containsString:@"send"] ||
-            [aid.lowercaseString containsString:@"send"])
+        NSString *low = [NSString stringWithFormat:@"%@ %@ %@", cls, label, aid].lowercaseString;
+        if (DSAIsNotSend(cls, low)) return;
+        if ([low containsString:@"send"] || [label containsString:@"发送"])
             hit = v;
     });
-    return hit;
+    if (hit) return hit;
+
+    // ② 兜底：发送按钮就在输入框附近（同一输入区容器内），取右下角那个小控件
+    UITextView *tv = DSAFindPromptTextView();
+    if (!tv) return nil;
+    UIView *scope = tv;
+    for (int i = 0; i < 3 && scope.superview; i++) scope = scope.superview;   // 上溯 3 层
+    __block UIView *best = nil;
+    __block CGFloat bestScore = -1;
+    DSAWalk(scope, ^(UIView *v) {
+        if (![v isKindOfClass:[UIControl class]] || !v.window || !v.isUserInteractionEnabled) return;
+        NSString *cls = NSStringFromClass([v class]);
+        NSString *label = v.accessibilityLabel ?: @"";
+        NSString *low = [NSString stringWithFormat:@"%@ %@", cls, label].lowercaseString;
+        if (DSAIsNotSend(cls, low)) return;
+        if (v.frame.size.width > 80 || v.frame.size.height > 80) return;      // 只要小控件
+        if (v.frame.size.width < 24 || v.frame.size.height < 24) return;
+        // 越靠右下分越高
+        CGFloat score = v.frame.origin.x + v.frame.origin.y;
+        if (score > bestScore) { bestScore = score; best = v; }
+    });
+    DSADiagLog([NSString stringWithFormat:@"[SEND] fallback pick=%@ score=%.0f",
+                 best ? NSStringFromClass([best class]) : @"nil", bestScore]);
+    return best;
 }
 
 #pragma mark - 填入（只填一次）
@@ -116,6 +156,9 @@ void DSAInjectTick(void) {
         if (DSASendTries >= kDSAMaxTries) {           // 尝试用尽 → 停手，交给用户
             return;
         }
+        // 等新会话打开，避免把提示词填进旧会话
+        if ([[NSDate date] timeIntervalSince1970] < DSAFillNotBefore) return;
+
         DSAStore *store = [DSAStore shared];
         [store loadIfNeeded];
         NSString *pending = [store pendingAgentId];
@@ -152,5 +195,6 @@ void DSAInjectTick(void) {
 /// 用户手动点了新建对话 / 重新选择智能体时，重置状态
 void DSAResetInjection(void) {
     DSASendTries = 0;
+    DSAFillNotBefore = 0;
     [[DSAStore shared] uninjectMark:@"_filled"];
 }

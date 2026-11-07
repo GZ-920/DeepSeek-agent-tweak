@@ -36,6 +36,7 @@ void DSAForceShowAgents(void);
 // Inject.m
 void DSAInjectTick(void);
 void DSAResetInjection(void);
+void DSASetFillDelay(NSTimeInterval sec);
 void DSAStartInjectionPolling(void);
 void DSADiagLog(NSString *line);
 // Sidebar.m

@@ -34,13 +34,16 @@ static BOOL DSALooksLikeNewChat(UIView *v) {
     NSString *cls = NSStringFromClass([v class]);
     NSString *lowLabel = label.lowercaseString;
     NSString *lowCls = cls.lowercaseString;
-    if ([label containsString:@"新建"] || [label containsString:@"新对话"]) return YES;
-    if ([lowLabel containsString:@"new chat"] || [lowLabel containsString:@"new conversation"]) return YES;
-    if ([lowLabel containsString:@"新"]) return YES;
-    if ([lowCls containsString:@"newchat"]) return YES;
-    // 图标按钮常见 identifier
     NSString *aid = v.accessibilityIdentifier ?: @"";
-    if ([aid.lowercaseString containsString:@"new"]) return YES;
+    // 真机实测（DSAgent_diag.txt）：新建对话按钮 accessibilityLabel = "sessionNewChatButton"
+    if ([label isEqualToString:@"sessionNewChatButton"]) return YES;
+    if ([lowLabel containsString:@"newchat"]) return YES;                 // sessionNewChatButton / NewChatButton
+    if ([lowLabel containsString:@"new chat"] || [lowLabel containsString:@"new conversation"]) return YES;
+    if ([label containsString:@"新建"] || [label containsString:@"新对话"]) return YES;
+    if ([lowCls containsString:@"newchat"]) return YES;
+    if ([aid.lowercaseString containsString:@"newchat"] || [aid.lowercaseString containsString:@"new_chat"]) return YES;
+    // 排除：同名前缀但不是新建（sessionTTSAutoPlayButton / open_sidebar 等）
+    if ([lowLabel containsString:@"tts"] || [lowLabel containsString:@"sidebar"]) return NO;
     return NO;
 }
 
@@ -108,6 +111,7 @@ static void DSABackToRoot(void) {
 void DSAOpenNewChatWithAgent(DSAAgent *agent) {
     if (!agent) return;
     DSAResetInjection();
+    DSASetFillDelay(1.5);      // 等新建对话的会话打开后再填
     DSADiagLog([NSString stringWithFormat:@"[NEWCHAT] agent=%@ pending set", agent.name]);
     [[DSAStore shared] setPendingAgentId:agent.agentId];
 
