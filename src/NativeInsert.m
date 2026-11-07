@@ -10,6 +10,7 @@
 
 static char kDSANativeTag;
 static char kDSANativeBarTag;
+static char kDSANativeHostTag;
 
 @interface DSAEntryProxy : NSObject
 + (void)tapped;
@@ -201,12 +202,38 @@ BOOL DSAInsertIntoNativeList(void) {
             DSADiagLog([NSString stringWithFormat:@"[NATIVE] searchBottom=%.0f targetTop=%.0f need=%.0f",
                          searchBottomInHost, targetTopInHost, need]);
             if (need > 1) {
-                if (!DSAMakeRoom(target, shost, need)) {
-                    DSADiagLog(@"[NATIVE] cannot push list down, abort to avoid breaking search bar");
+                CGFloat hBefore = search.bounds.size.height;
+                // 找到要改的那条约束，先记下原值以便回滚
+                NSLayoutConstraint *hitC = nil;
+                for (NSLayoutConstraint *c in shost.constraints) {
+                    if (c.firstItem == target && c.firstAttribute == NSLayoutAttributeTop &&
+                        c.relation == NSLayoutRelationEqual) { hitC = c; break; }
+                }
+                if (!hitC) {
+                    for (NSLayoutConstraint *c in target.constraints) {
+                        if (c.firstAttribute == NSLayoutAttributeTop && c.relation == NSLayoutRelationEqual) {
+                            hitC = c; break;
+                        }
+                    }
+                }
+                if (!hitC) {
+                    DSADiagLog(@"[NATIVE] no top constraint to push, abort");
                     [bar removeFromSuperview];
                     return NO;
                 }
+                CGFloat c0 = hitC.constant;
+                hitC.constant += need;
                 [shost layoutIfNeeded];
+                CGFloat hAfter = search.bounds.size.height;
+                DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed by %.0f; search h %.0f -> %.0f",
+                             need, hBefore, hAfter]);
+                if (fabs(hAfter - hBefore) > 12) {          // 搜索框被拉伸了 → 回滚
+                    hitC.constant = c0;
+                    [shost layoutIfNeeded];
+                    DSADiagLog(@"[NATIVE] search bar stretched → rolled back");
+                    [bar removeFromSuperview];
+                    return NO;
+                }
             }
         }
         [shost bringSubviewToFront:bar];
@@ -246,6 +273,7 @@ BOOL DSAInsertIntoNativeList(void) {
 
     objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(host, &kDSANativeBarTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(w, &kDSANativeHostTag, host, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     DSADiagLog([NSString stringWithFormat:@"[NATIVE] inserted on %@ gap=%.0f",
                  NSStringFromClass([target class]), gap]);
 
@@ -254,9 +282,31 @@ BOOL DSAInsertIntoNativeList(void) {
     return YES;
 }
 
+/// 侧边栏打开时把列表入口条藏起来（避免出现两个「智能体」）
+static void DSAHideEntryIfSidebarOpen(UIWindow *w) {
+    BOOL sidebarOpen = NO;
+    NSMutableArray *st = [NSMutableArray arrayWithObject:w];
+    int g = 0;
+    while (st.count && g++ < 3000) {
+        UIView *v = st.lastObject; [st removeLastObject];
+        for (UIView *s2 in v.subviews) [st addObject:s2];
+        if (!v.window || v.hidden || v.alpha < 0.05) continue;
+        if (![NSStringFromClass([v class]) containsString:@"Sidebar"]) continue;
+        CGRect r = [v convertRect:v.bounds toView:nil];
+        if (v.bounds.size.width > 40 && v.bounds.size.width < w.bounds.size.width * 0.95 &&
+            r.origin.x >= -v.bounds.size.width * 0.5) { sidebarOpen = YES; break; }
+    }
+    UIView *host = objc_getAssociatedObject(w, &kDSANativeHostTag);
+    UIView *bar = host ? objc_getAssociatedObject(host, &kDSANativeBarTag) : nil;
+    if (bar && bar.hidden != sidebarOpen) bar.hidden = sidebarOpen;
+}
+
 void DSAEnsureNativeEntry(void) {
-    @try { DSAInsertIntoNativeList(); }
-    @catch (__unused NSException *e) {
+    @try {
+        UIWindow *w = DSAKeyWindow();
+        if (w) DSAHideEntryIfSidebarOpen(w);
+        DSAInsertIntoNativeList();
+    } @catch (__unused NSException *e) {
         DSADiagLog([NSString stringWithFormat:@"[NATIVE] exception %@", e.reason]);
     }
 }

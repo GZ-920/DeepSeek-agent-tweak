@@ -21,86 +21,118 @@ void DSADiagLog(NSString *line);
 
 #pragma mark - 区块内容
 
-/// 造「智能体」区块：标题 + 每个智能体一行 + 新建按钮
+/// 造区块：智能体对话（顶部）→ 智能体（点击即开新对话）→ 设置（增删都在这里）
 static UIView *DSAMakeAgentSection(void) {
     UIView *sec = [[UIView alloc] initWithFrame:CGRectZero];
     sec.backgroundColor = [UIColor clearColor];
-
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectZero];
-    title.text = @"智能体";
-    title.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-    title.textColor = [UIColor secondaryLabelColor];
-    [sec addSubview:title];
-
-    UIStackView *stack = [[UIStackView alloc] initWithFrame:CGRectZero];
-    stack.axis = UILayoutConstraintAxisVertical;
-    stack.spacing = 2;
-    stack.translatesAutoresizingMaskIntoConstraints = NO;
-    [sec addSubview:stack];
+    sec.translatesAutoresizingMaskIntoConstraints = NO;
 
     DSAStore *store = [DSAStore shared];
     [store loadIfNeeded];
     NSArray<DSAAgent *> *agents = store.agents;
 
-    // 每个智能体一行
-    for (DSAAgent *ag in agents) {
+    UIStackView *stack = [[UIStackView alloc] initWithFrame:CGRectZero];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 0;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [sec addSubview:stack];
+
+    UILabel *(^makeHeader)(NSString *) = ^UILabel *(NSString *t) {
+        UILabel *l = [[UILabel alloc] initWithFrame:CGRectZero];
+        l.translatesAutoresizingMaskIntoConstraints = NO;
+        l.text = t;
+        l.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
+        l.textColor = [UIColor secondaryLabelColor];
+        [l.heightAnchor constraintEqualToConstant:26].active = YES;
+        return l;
+    };
+
+    UIControl *(^makeRow)(NSString *, NSString *, NSString *, NSString *, SEL) =
+    ^UIControl *(NSString *title, NSString *sub, NSString *accLabel, NSString *accValue, SEL act) {
         UIControl *row = [[UIControl alloc] initWithFrame:CGRectZero];
         row.translatesAutoresizingMaskIntoConstraints = NO;
-        row.tag = 91000;
-        [row addTarget:[DSAEntryProxy class] action:@selector(agentRowTapped:)
-       forControlEvents:UIControlEventTouchUpInside];
-        row.accessibilityLabel = ag.name;
-        row.accessibilityValue = ag.agentId;
+        row.accessibilityLabel = accLabel;
+        row.accessibilityValue = accValue;
+        [row addTarget:[DSAEntryProxy class] action:act forControlEvents:UIControlEventTouchUpInside];
 
         UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
         lab.translatesAutoresizingMaskIntoConstraints = NO;
-        lab.text = [NSString stringWithFormat:@"· %@", ag.name];
+        lab.text = title;
         lab.font = [UIFont systemFontOfSize:15];
         lab.textColor = [UIColor labelColor];
         lab.userInteractionEnabled = NO;
-        lab.tag = 91001;
         [row addSubview:lab];
-        [stack addArrangedSubview:row];
-        [row.heightAnchor constraintEqualToConstant:36].active = YES;
-        [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:4].active = YES;
-        [lab.centerYAnchor constraintEqualToAnchor:row.centerYAnchor].active = YES;
-        [lab.trailingAnchor constraintEqualToAnchor:row.trailingAnchor].active = YES;
+
+        UILabel *lab2 = [[UILabel alloc] initWithFrame:CGRectZero];
+        lab2.translatesAutoresizingMaskIntoConstraints = NO;
+        lab2.text = sub;
+        lab2.font = [UIFont systemFontOfSize:12];
+        lab2.textColor = [UIColor tertiaryLabelColor];
+        lab2.userInteractionEnabled = NO;
+        lab2.hidden = !sub.length;
+        [row addSubview:lab2];
+
+        [NSLayoutConstraint activateConstraints:@[
+            [row.heightAnchor constraintEqualToConstant:40],
+            [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:4],
+            [lab.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-4],
+            [lab.topAnchor constraintEqualToAnchor:row.topAnchor constant:5],
+            [lab2.leadingAnchor constraintEqualToAnchor:lab.leadingAnchor],
+            [lab2.trailingAnchor constraintEqualToAnchor:lab.trailingAnchor],
+            [lab2.topAnchor constraintEqualToAnchor:lab.bottomAnchor constant:1],
+        ]];
+        return row;
+    };
+
+    // —— 1) 智能体对话（顶部）——
+    [stack addArrangedSubview:makeHeader(@"智能体对话")];
+    NSInteger convCount = 0;
+    for (DSAAgent *ag in agents) {
+        for (NSString *sid in [store sessionIdsForAgent:ag.agentId]) {
+            NSString *cn = [store conversationNameForSession:sid];
+            NSString *label = cn.length ? [NSString stringWithFormat:@"%@ · %@", ag.name, cn] : ag.name;
+            [stack addArrangedSubview:makeRow(label, nil, label, sid, @selector(convRowTapped:))];
+            if (++convCount >= 8) break;
+        }
+        if (convCount >= 8) break;
+    }
+    if (!convCount) {
+        UILabel *empty = [[UILabel alloc] initWithFrame:CGRectZero];
+        empty.translatesAutoresizingMaskIntoConstraints = NO;
+        empty.text = @"暂无对话";
+        empty.font = [UIFont systemFontOfSize:14];
+        empty.textColor = [UIColor tertiaryLabelColor];
+        [empty.heightAnchor constraintEqualToConstant:30].active = YES;
+        [stack addArrangedSubview:empty];
     }
 
-    // 新建按钮
-    UIControl *add = [[UIControl alloc] initWithFrame:CGRectZero];
-    add.translatesAutoresizingMaskIntoConstraints = NO;
-    [add addTarget:[DSAEntryProxy class] action:@selector(newAgentTapped:)
-  forControlEvents:UIControlEventTouchUpInside];
-    add.accessibilityLabel = @"新建智能体";
-    UILabel *addLab = [[UILabel alloc] initWithFrame:CGRectZero];
-    addLab.translatesAutoresizingMaskIntoConstraints = NO;
-    addLab.text = @"＋ 新建智能体";
-    addLab.font = [UIFont systemFontOfSize:15 weight:UIFontWeightMedium];
-    addLab.textColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1];
-    addLab.userInteractionEnabled = NO;
-    [add addSubview:addLab];
-    [stack addArrangedSubview:add];
-    [add.heightAnchor constraintEqualToConstant:36].active = YES;
-    [addLab.leadingAnchor constraintEqualToAnchor:add.leadingAnchor constant:4].active = YES;
-    [addLab.centerYAnchor constraintEqualToAnchor:add.centerYAnchor].active = YES;
-    [addLab.trailingAnchor constraintEqualToAnchor:add.trailingAnchor].active = YES;
+    // —— 2) 智能体（点击直接开新对话）——
+    [stack addArrangedSubview:makeHeader(@"智能体")];
+    for (DSAAgent *ag in agents) {
+        [stack addArrangedSubview:makeRow(ag.name, nil, ag.name, ag.agentId, @selector(agentRowTapped:))];
+    }
+    if (!agents.count) {
+        UILabel *empty = [[UILabel alloc] initWithFrame:CGRectZero];
+        empty.translatesAutoresizingMaskIntoConstraints = NO;
+        empty.text = @"还没有智能体";
+        empty.font = [UIFont systemFontOfSize:14];
+        empty.textColor = [UIColor tertiaryLabelColor];
+        [empty.heightAnchor constraintEqualToConstant:30].active = YES;
+        [stack addArrangedSubview:empty];
+    }
 
-    // 布局
-    title.translatesAutoresizingMaskIntoConstraints = NO;
+    // —— 3) 设置（新增/删除都在这里）——
+    [stack addArrangedSubview:makeHeader(@"设置")];
+    [stack addArrangedSubview:makeRow(@"管理智能体", @"新增或删除", @"管理智能体", @"", @selector(settingsTapped:))];
+
     [NSLayoutConstraint activateConstraints:@[
-        [title.topAnchor constraintEqualToAnchor:sec.topAnchor],
-        [title.leadingAnchor constraintEqualToAnchor:sec.leadingAnchor constant:4],
-        [title.trailingAnchor constraintEqualToAnchor:sec.trailingAnchor],
-        [title.heightAnchor constraintEqualToConstant:22],
-        [stack.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:4],
+        [stack.topAnchor constraintEqualToAnchor:sec.topAnchor],
         [stack.leadingAnchor constraintEqualToAnchor:sec.leadingAnchor],
         [stack.trailingAnchor constraintEqualToAnchor:sec.trailingAnchor],
         [stack.bottomAnchor constraintEqualToAnchor:sec.bottomAnchor],
     ]];
-    sec.translatesAutoresizingMaskIntoConstraints = NO;
-    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section built rows=%lu",
-                 (unsigned long)([DSAStore shared].agents.count + 1)]);
+    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section built agents=%lu convs=%lu",
+                 (unsigned long)agents.count, (unsigned long)convCount]);
     return sec;
 }
 
@@ -307,6 +339,21 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     return YES;
 }
 
+/// 让区块在下次轮询时重建（先移除）
+void DSARefreshNativeSidebar(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        UIWindow *w = DSAKeyWindow();
+        UIView *sb = DSAFindNativeSidebar(w);
+        if (!sb) return;
+        UIView *sec = objc_getAssociatedObject(sb, &kDSASidebarSectionTag);
+        if (sec) {
+            [sec removeFromSuperview];
+            objc_setAssociatedObject(sb, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            DSADiagLog(@"[SIDEBAR] section cleared for rebuild");
+        }
+    });
+}
+
 /// 由定时任务调用
 void DSAEnsureNativeSidebar(void) {
     @try {
@@ -327,89 +374,54 @@ void DSAEnsureNativeSidebar(void) {
 
 @implementation DSAEntryProxy (SidebarRows)
 
+/// 点智能体 → 直接开始新对话
 + (void)agentRowTapped:(UIControl *)sender {
-    NSString *agentId = sender.accessibilityValue;
-    DSAAgent *ag = [[DSAStore shared] agentWithId:agentId];
+    DSAAgent *ag = [[DSAStore shared] agentWithId:sender.accessibilityValue];
     if (!ag) return;
+    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] tap agent=%@ → new chat", ag.name]);
+    DSAOpenNewChatWithAgent(ag);
+}
+
+/// 点对话 → 打开该会话
++ (void)convRowTapped:(UIControl *)sender {
+    NSString *sid = sender.accessibilityValue;
+    if (!sid.length) return;
+    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] tap conv %@", sid]);
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"DSAOpenSessionRequest" object:nil
+                                                      userInfo:@{ @"sessionId": sid }];
+}
+
+/// 设置：新增 / 删除都在这里
++ (void)settingsTapped:(UIControl *)sender {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
         if (!top) return;
-        UIAlertController *sheet = [UIAlertController alertControllerWithTitle:ag.name
-                                                                      message:ag.systemPrompt
+        UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"管理智能体"
+                                                                      message:nil
                                                                preferredStyle:UIAlertControllerStyleActionSheet];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"新建对话（自动发送设定提示词）"
-                                                  style:UIAlertActionStyleDefault
+        [sheet addAction:[UIAlertAction actionWithTitle:@"新增智能体" style:UIAlertActionStyleDefault
                                                 handler:^(UIAlertAction *x) {
-            DSAOpenNewChatWithAgent(ag);
+            DSAPresentAgentEditor(top, nil, ^(DSAAgent *saved, BOOL startNew) {
+                DSARefreshNativeSidebar();
+                if (startNew) DSAOpenNewChatWithAgent(saved);
+            });
         }]];
-        [sheet addAction:[UIAlertAction actionWithTitle:@"删除" style:UIAlertActionStyleDestructive
-                                                handler:^(UIAlertAction *x) {
-            [[DSAStore shared] deleteAgentWithId:ag.agentId];
-            UIView *sb = DSAFindNativeSidebar(DSAKeyWindow());
-            UIView *sec = objc_getAssociatedObject(sb, &kDSASidebarSectionTag);
-            if (sec) {
-                [sec removeFromSuperview];
-                objc_setAssociatedObject(sb, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
-        }]];
+        // 删除：逐个列出
+        NSArray<DSAAgent *> *agents = [DSAStore shared].agents;
+        for (DSAAgent *ag in agents) {
+            [sheet addAction:[UIAlertAction actionWithTitle:[@"删除 " stringByAppendingString:ag.name]
+                                                      style:UIAlertActionStyleDestructive
+                                                    handler:^(UIAlertAction *x) {
+                [[DSAStore shared] deleteAgentWithId:ag.agentId];
+                DSARefreshNativeSidebar();
+                DSAToast([NSString stringWithFormat:@"已删除「%@」", ag.name]);
+            }]];
+        }
         [sheet addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
         sheet.popoverPresentationController.sourceView = sender;
         [top presentViewController:sheet animated:YES completion:nil];
     });
 }
 
-+ (void)newAgentTapped:(UIControl *)sender {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
-        if (!top) return;
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"新建智能体"
-                                                                      message:@"名字 + 设定提示词"
-                                                               preferredStyle:UIAlertControllerStyleAlert];
-        [alert addTextFieldWithConfigurationHandler:^(UITextField *f) {
-            f.placeholder = @"名字，例如：论文导师";
-        }];
-        [alert addTextFieldWithConfigurationHandler:^(UITextField *f) {
-            f.placeholder = @"设定提示词（每次新对话自动发送）";
-            f.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        }];
-        [alert addAction:[UIAlertAction actionWithTitle:@"保存并开始对话" style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *x) {
-            NSString *name = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-            NSString *prompt = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-            if (!name.length || !prompt.length) { DSAToast(@"名字和提示词都不能为空"); return; }
-            DSAAgent *a = [DSAAgent new];
-            a.agentId = [[NSUUID UUID] UUIDString];
-            a.name = name; a.systemPrompt = prompt; a.emoji = @"";
-            a.createdAt = [[NSDate date] timeIntervalSince1970];
-            [[DSAStore shared] saveAgent:a];
-            UIView *sb = DSAFindNativeSidebar(DSAKeyWindow());
-            UIView *sec = objc_getAssociatedObject(sb, &kDSASidebarSectionTag);
-            if (sec) {
-                [sec removeFromSuperview];
-                objc_setAssociatedObject(sb, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
-            DSAOpenNewChatWithAgent(a);
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"保存" style:UIAlertActionStyleDefault
-                                                handler:^(UIAlertAction *x) {
-            NSString *name = [alert.textFields[0].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-            NSString *prompt = [alert.textFields[1].text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-            if (!name.length || !prompt.length) { DSAToast(@"名字和提示词都不能为空"); return; }
-            DSAAgent *a = [DSAAgent new];
-            a.agentId = [[NSUUID UUID] UUIDString];
-            a.name = name; a.systemPrompt = prompt; a.emoji = @"";
-            a.createdAt = [[NSDate date] timeIntervalSince1970];
-            [[DSAStore shared] saveAgent:a];
-            UIView *sb = DSAFindNativeSidebar(DSAKeyWindow());
-            UIView *sec = objc_getAssociatedObject(sb, &kDSASidebarSectionTag);
-            if (sec) {
-                [sec removeFromSuperview];
-                objc_setAssociatedObject(sb, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            }
-        }]];
-        [alert addAction:[UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil]];
-        [top presentViewController:alert animated:YES completion:nil];
-    });
-}
-
 @end
+

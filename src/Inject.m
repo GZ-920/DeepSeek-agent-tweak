@@ -149,6 +149,85 @@ static BOOL DSATrySendOnce(void) {
     return NO;
 }
 
+#pragma mark - 会话名 / 隐藏提示词
+
+/// 从导航栏抓当前会话标题，存为显示名
+static void DSACaptureConversationName(void) {
+    @try {
+        UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
+        if (!top) return;
+        NSString *title = top.navigationItem.title ?: top.title;
+        if (!title.length) {
+            // 大标题 / 导航栏里的 UILabel
+            UINavigationBar *bar = top.navigationController.navigationBar;
+            for (UIView *v in bar.subviews) {
+                if (![v isKindOfClass:[UILabel class]]) continue;
+                NSString *t = ((UILabel *)v).text;
+                if (t.length && ![t isEqualToString:@"智能体"]) { title = t; break; }
+            }
+        }
+        if (!title.length) return;
+        DSAStore *store = [DSAStore shared];
+        NSString *agentId = [store pendingAgentId];
+        // pending 已清 → 用最后一次绑定的会话（简单起见：绑到最近一个会话）
+        (void)agentId;
+        NSString *lastSid = [store lastBoundSessionId];
+        if (lastSid) {
+            [store setConversationName:title forSession:lastSid];
+            DSADiagLog([NSString stringWithFormat:@"[CONV] name=%@ sid=%@", title, lastSid]);
+        }
+    } @catch (__unused NSException *e) {
+        DSADiagLog([NSString stringWithFormat:@"[CONV] capture failed %@", e.reason]);
+    }
+}
+
+/// 隐藏提示词消息（扫描可见 cell，文字等于任一智能体提示词就隐藏）
+static void DSAHidePromptMessages(void) {
+    @try {
+        DSAStore *store = [DSAStore shared];
+        [store loadIfNeeded];
+        NSMutableArray *prompts = [NSMutableArray array];
+        for (DSAAgent *ag in store.agents)
+            if (ag.systemPrompt.length) [prompts addObject:ag.systemPrompt];
+        if (!prompts.count) return;
+
+        UIWindow *w = DSAKeyWindow();
+        NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
+        int guard = 0;
+        while (stack.count && guard++ < 5000) {
+            UIView *v = stack.lastObject;
+            [stack removeLastObject];
+            for (UIView *s2 in v.subviews) [stack addObject:s2];
+            if (!v.window) continue;
+            BOOL isCell = [v isKindOfClass:[UICollectionViewCell class]] || [v isKindOfClass:[UITableViewCell class]];
+            if (!isCell) continue;
+            // 取 cell 里所有 label 的拼接文本
+            NSMutableString *txt = [NSMutableString string];
+            NSMutableArray *st2 = [NSMutableArray arrayWithObject:v];
+            while (st2.count) {
+                UIView *c = st2.lastObject; [st2 removeLastObject];
+                for (UIView *s3 in c.subviews) [st2 addObject:s3];
+                if ([c isKindOfClass:[UILabel class]]) [txt appendString:((UILabel *)c).text ?: @""];
+                if ([c isKindOfClass:[UITextView class]]) [txt appendString:((UITextView *)c).text ?: @""];
+            }
+            for (NSString *p in prompts) {
+                if (p.length >= 6 && [txt containsString:[p substringToIndex:MIN((NSUInteger)30, p.length)]]) {
+                    if (!v.hidden) {
+                        v.hidden = YES;
+                        v.alpha = 0;
+                        v.userInteractionEnabled = NO;
+                        DSADiagLog([NSString stringWithFormat:@"[HIDE] prompt cell %@ hidden",
+                                     NSStringFromClass([v class])]);
+                    }
+                    break;
+                }
+            }
+        }
+    } @catch (__unused NSException *e) {
+        DSADiagLog([NSString stringWithFormat:@"[HIDE] exception %@", e.reason]);
+    }
+}
+
 #pragma mark - 轮询
 
 // 状态：
@@ -192,6 +271,8 @@ void DSAInjectTick(void) {
             if (cur.length == 0) {
                 DSASendTries = -1;
                 DSADiagLog(@"[STATE] input cleared → message sent OK");
+                DSACaptureConversationName();
+                DSAHidePromptMessages();
                 return;
             }
         }

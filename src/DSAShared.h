@@ -25,6 +25,7 @@ void DSAEnsureFloatingEntry(void);
 void DSAEnsureNativeEntry(void);
 // NativeSidebar.m
 void DSAEnsureNativeSidebar(void);
+void DSARefreshNativeSidebar(void);
 void DSARemoveFloatingPill(void);
 // Inject.m
 BOOL DSASendPrompt(NSString *prompt);
@@ -41,6 +42,9 @@ void DSASetFillDelay(NSTimeInterval sec);
 void DSAStartInjectionPolling(void);
 void DSADiagLog(NSString *line);
 void DSALogVersion(void);
+// AgentEditor.m
+void DSAPresentAgentEditor(UIViewController *top, DSAAgent *existing,
+                          void (^done)(DSAAgent *saved, BOOL startNew));
 // Sidebar.m
 void DSAShowSidebar(void);
 void DSAHideSidebar(void);

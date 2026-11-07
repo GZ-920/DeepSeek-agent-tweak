@@ -44,6 +44,7 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
     NSMutableArray<DSAAgent *> *_agents;
     NSMutableDictionary<NSString *, NSString *> *_bindings;   // sessionId -> agentId
     NSMutableDictionary<NSString *, NSNumber *> *_injected;   // sessionId -> 1
+    NSMutableDictionary<NSString *, NSString *> *_convNames;  // sessionId -> 显示名
     NSString *_pendingAgentId;
 }
 - (void)load;
@@ -64,6 +65,7 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
     _agents = [NSMutableArray array];
     _bindings = [NSMutableDictionary dictionary];
     _injected = [NSMutableDictionary dictionary];
+    _convNames = [NSMutableDictionary dictionary];
 
     NSData *d = [NSData dataWithContentsOfFile:DSAPath(@"agents.json")];
     if (d) {
@@ -86,6 +88,8 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
                 [_injected addEntriesFromDictionary:root[@"injected"]];
             if ([root[@"pending"] isKindOfClass:[NSString class]])
                 _pendingAgentId = root[@"pending"];
+            if ([root[@"names"] isKindOfClass:[NSDictionary class]])
+                [_convNames addEntriesFromDictionary:root[@"names"]];
         }
     }
     [_agents sortUsingComparator:^NSComparisonResult(DSAAgent *a, DSAAgent *b) {
@@ -101,6 +105,7 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
 
     NSDictionary *root = @{ @"bindings": _bindings ?: @{},
                             @"injected": _injected ?: @{},
+                            @"names": _convNames ?: @{},
                             @"pending": _pendingAgentId ?: @"" };
     d = [NSJSONSerialization dataWithJSONObject:root options:0 error:nil];
     [d writeToFile:DSAPath(@"sessions.json") atomically:YES];
@@ -151,6 +156,20 @@ static NSString *DSAPath(NSString *name) { return [DSADir() stringByAppendingPat
     if (!sessionId.length) return;
     [_bindings removeObjectForKey:sessionId];
     [self synchronize];
+}
+
+- (NSString *)lastBoundSessionId {
+    return _bindings.allKeys.lastObject;
+}
+
+- (void)setConversationName:(NSString *)name forSession:(NSString *)sessionId {
+    if (!sessionId.length || !name.length) return;
+    _convNames[sessionId] = name;
+    [self synchronize];
+}
+
+- (NSString *)conversationNameForSession:(NSString *)sessionId {
+    return sessionId.length ? _convNames[sessionId] : nil;
 }
 
 - (NSArray<NSString *> *)sessionIdsForAgent:(NSString *)agentId {

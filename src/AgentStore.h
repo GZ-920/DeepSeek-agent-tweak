@@ -34,6 +34,9 @@
 - (void)bindSession:(NSString *)sessionId toAgent:(NSString *)agentId;
 - (void)unbindSession:(NSString *)sessionId;
 - (NSArray<NSString *> *)sessionIdsForAgent:(NSString *)agentId;
+- (NSString *)lastBoundSessionId;
+- (void)setConversationName:(NSString *)name forSession:(NSString *)sessionId;
+- (NSString *)conversationNameForSession:(NSString *)sessionId;
 
 // —— 防重复注入 ——
 - (BOOL)sessionInjected:(NSString *)sessionId;
