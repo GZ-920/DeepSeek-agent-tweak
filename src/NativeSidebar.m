@@ -123,17 +123,32 @@ static BOOL DSALooksLikeOpenDrawer(UIView *v, UIWindow *w) {
 /// 带 Sidebar 字样的往往是装饰子视图 → 所以找到后要**向上找**真正的抽屉容器。
 static UIView *DSAFindNativeSidebar(UIWindow *w) {
     if (!w) return nil;
+    // 种子：优先用已确认存在的 SessionListSearchBarView（它一定在抽屉里），
+    // 其次任何含 Sidebar / SessionList 的视图
     NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
     int guard = 0;
     UIView *seed = nil;
-    while (stack.count && guard++ < 4000) {
+    UIView *seedAny = nil;
+    while (stack.count && guard++ < 5000) {
         UIView *v = stack.lastObject;
         [stack removeLastObject];
         for (UIView *s in v.subviews) [stack addObject:s];
         if (!v.window || v.hidden || v.alpha < 0.05) continue;
-        if ([NSStringFromClass([v class]) containsString:@"Sidebar"]) { seed = v; break; }
+        NSString *c = NSStringFromClass([v class]);
+        if ([c containsString:@"SearchBar"] || [c containsString:@"SessionList"]) {
+            if (!seed) seed = v;
+        } else if ([c containsString:@"Sidebar"]) {
+            if (!seedAny) seedAny = v;
+        }
+        if (seed) break;
     }
-    if (!seed) return nil;
+    if (!seed) seed = seedAny;
+    if (!seed) {
+        static int noSeed = 0;
+        if (++noSeed == 1 || noSeed % 30 == 0)
+            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] no seed found (attempt %d)", noSeed]);
+        return nil;
+    }
 
     // 从 seed 向上找：尺寸像抽屉（宽 100~95% 屏宽）且露在屏幕内的最高祖先
     UIView *best = nil;
@@ -141,10 +156,31 @@ static UIView *DSAFindNativeSidebar(UIWindow *w) {
     for (int i = 0; i < 8 && p; i++, p = p.superview) {
         if (DSALooksLikeOpenDrawer(p, w)) best = p;     // 越往上越可能是整块抽屉
     }
-    if (best) return best;
+    if (best) {
+        static BOOL wasNil = YES;
+        if (wasNil) { wasNil = NO;
+            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] FOUND drawer %@ (seed %@)",
+                         NSStringFromClass([best class]), NSStringFromClass([seed class])]); }
+        return best;
+    }
 
-    // 向上都太大/不可见 → 退回 seed 本身（若它自己像抽屉）
+    // 向上都太大/不可见 → 退回 seed 自己（若它像抽屉）
     if (DSALooksLikeOpenDrawer(seed, w)) return seed;
+
+    // 打印祖先链，便于定位（每次状态变化打一次）
+    static int failLog = 0;
+    if (++failLog == 1 || failLog % 30 == 0) {
+        NSMutableString *chain = [NSMutableString string];
+        UIView *p = seed;
+        for (int i = 0; i < 8 && p; i++, p = p.superview) {
+            CGRect r = [p convertRect:p.bounds toView:nil];
+            [chain appendFormat:@"\n    L%d %@ %.0fx%.0f at %.0f,%.0f",
+             i, NSStringFromClass([p class]), p.bounds.size.width, p.bounds.size.height,
+             r.origin.x, r.origin.y];
+        }
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] drawer not resolved (attempt %d) seed=%@%@",
+                     failLog, NSStringFromClass([seed class]), chain]);
+    }
 
     // seed 自己不可见（装饰件可能常驻）→ 再向下找一个像抽屉的
     NSMutableArray *st2 = [NSMutableArray arrayWithObject:seed];
