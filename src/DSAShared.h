@@ -19,6 +19,7 @@ Class DSAClassNamed(NSString *name);
 
 // Entry.m
 void DSAEnsureEntry(UIView *view);
+void DSAEnsureFloatingEntry(void);
 // Inject.m
 void DSAOnSessionShown(NSString *sessionId);
 BOOL DSASendPrompt(NSString *prompt);

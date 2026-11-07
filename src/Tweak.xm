@@ -62,6 +62,7 @@ static UIView *DSAFindListByTree(void) {
     %orig;
     UIView *list = DSAFindListByKey(self);
     if (list) DSAEnsureEntry(list);
+    DSAEnsureFloatingEntry();      // 悬浮入口兜底：任何页面布局完都确保它还在
 }
 
 - (void)viewDidAppear:(BOOL)animated {
@@ -120,6 +121,9 @@ static UIView *DSAFindListByTree(void) {
 #ifdef DSA_SELFTEST
         DSAInstallSelfTest();
 #endif
+        // 悬浮入口：等首帧窗口就绪后挂上，之后每次布局都会保活
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{ DSAEnsureFloatingEntry(); });
         NSLog(@"[DSAgent] loaded");
     }
 }
