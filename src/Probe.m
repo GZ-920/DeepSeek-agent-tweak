@@ -67,8 +67,7 @@ static void DSAInstallPillOnWindow(UIWindow *w) {
     pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
     pill.layer.cornerRadius = 17;
     pill.clipsToBounds = YES;
-    [pill addTarget:NSClassFromString(@"DSAEntryProxy")
-             action:NSSelectorFromString(@"tapped")
+    [pill addTarget:[DSAEntryProxy class] action:NSSelectorFromString(@"tapped")
    forControlEvents:UIControlEventTouchUpInside];
 
     UILabel *l = [[UILabel alloc] initWithFrame:pill.bounds];

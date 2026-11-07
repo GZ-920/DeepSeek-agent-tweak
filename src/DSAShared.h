@@ -6,6 +6,7 @@
 #define DSA_SHARED_H
 
 #import <UIKit/UIKit.h>
+// CGPoint 需要 CoreGraphics（UIKit 已包含）
 #import "AgentStore.h"
 
 #ifdef __cplusplus
@@ -25,10 +26,17 @@ void DSAOnSessionShown(NSString *sessionId);
 BOOL DSASendPrompt(NSString *prompt);
 // Trigger.m
 void DSAOpenNewChatWithAgent(DSAAgent *agent);
+// ClickSim.m
+BOOL DSATapAtPoint(CGPoint pointInWindow);
+// TapProbe.m
+void DSAStartTapProbe(void);
 // SelfTest.m
 void DSAInstallSelfTest(void);
 void DSAScanControls(id vc);
 void DSAForceShowAgents(void);
+// Sidebar.m
+void DSAShowSidebar(void);
+void DSAHideSidebar(void);
 // Probe.m
 void DSAProbeWindows(void);
 void DSAProbeSquare(void);
