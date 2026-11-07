@@ -192,7 +192,7 @@ BOOL DSAInsertIntoNativeList(void) {
                                                                    attribute:NSLayoutAttributeBottom
                                                                   multiplier:1 constant:0];
             push.priority = UILayoutPriorityRequired;
-            [push activate];
+            push.active = YES;
         }
         [shost bringSubviewToFront:bar];
         objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
