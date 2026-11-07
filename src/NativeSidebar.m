@@ -279,9 +279,9 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         [sec.trailingAnchor constraintEqualToAnchor:anchor.trailingAnchor],
     ]];
 
-    // 找「被区块挡住的列表」：host 的后代里第一个不是锚点的列表
-    UIView *below = nil;
-    {
+    // ★ 找「被区块挡住的列表」：用共用的会话列表查找，保证和 NativeInsert 推的是同一个视图
+    UIView *below = DSAFindSessionListView();
+    if (!below) {
         NSMutableArray *st = [NSMutableArray arrayWithObject:host];
         int g2 = 0;
         while (st.count && g2++ < 3000) {
@@ -309,39 +309,10 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         CGFloat delta = want - cur;
         DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] cur=%.0f want=%.0f delta=%.0f", cur, want, delta]);
         if (delta > 1) {
-            // ★ 累计下推：列表可能已被 NativeInsert 推过（133），只补差额，避免推两次
-            static NSString *const kTot = @"DSATotalPush";   // 与 NativeInsert 共用
-            NSNumber *prevObj = objc_getAssociatedObject(below, (__bridge const void *)kTot);
-            CGFloat already = prevObj ? prevObj.doubleValue : 0;
-            CGFloat add = delta - already;
-            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] need total=%.0f already=%.0f add=%.0f",
-                         delta, already, add]);
-            if (add <= 1) {
-                DSADiagLog(@"[SIDEBAR] already pushed enough, skip");
-            } else {
-                BOOL pushed = NO;
-                NSArray *owners = @[ below.superview ?: (id)[NSNull null], host, below ];
-                for (id owner in owners) {
-                    if (![owner isKindOfClass:[UIView class]]) continue;
-                    UIView *ov = (UIView *)owner;
-                    for (NSLayoutConstraint *c in ov.constraints) {
-                        if (c.firstItem == below && c.firstAttribute == NSLayoutAttributeTop &&
-                            c.relation == NSLayoutRelationEqual) {
-                            c.constant += add; pushed = YES;
-                            objc_setAssociatedObject(below, (__bridge const void *)kTot, @(already + add),
-                                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] pushed in %@ +%.0f constant=%.0f",
-                                         NSStringFromClass([ov class]), add, c.constant]);
-                            break;
-                        }
-                    }
-                    if (pushed) break;
-                }
-                if (!pushed) {
-                    DSADiagLog(@"[SIDEBAR] cannot push list down");
-                    [sec removeFromSuperview];
-                    return NO;
-                }
+            if (!DSAPushListToTotal(below, below.superview ?: host, delta, nil)) {
+                DSADiagLog(@"[SIDEBAR] push failed, remove section to avoid overlap");
+                [sec removeFromSuperview];
+                return NO;
             }
         }
     } else {

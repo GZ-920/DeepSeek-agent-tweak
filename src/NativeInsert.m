@@ -73,6 +73,81 @@ static BOOL DSAIsSessionList(UIView *v) {
     return NO;
 }
 
+/// 找「会话列表」（可见 cell 类名含 SessionList）—— 两个模块共用，保证推同一个视图
+UIView *DSAFindSessionListView(void) {
+    UIWindow *w = DSAKeyWindow();
+    if (!w) return nil;
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
+    int guard = 0;
+    while (stack.count && guard++ < 5000) {
+        UIView *v = stack.lastObject;
+        [stack removeLastObject];
+        for (UIView *s2 in v.subviews) [stack addObject:s2];
+        if (!v.window) continue;
+        BOOL isList = [v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]];
+        if (!isList) continue;
+        if (DSAIsSessionList(v)) return v;
+    }
+    return nil;
+}
+
+/// 推送：把 list 往下移 moveBy（调用方传的必须是「还需移动多少」）
+/// 内部用 key DSATotalPush 记录累计位移，仅供诊断/回滚
+BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat moveBy, UIView *searchBar) {
+    if (!list || !container) return NO;
+    static NSString *const kTot = @"DSATotalPush";
+    NSNumber *prev = objc_getAssociatedObject(list, (__bridge const void *)kTot);
+    CGFloat already = prev ? prev.doubleValue : 0;
+
+    if (moveBy <= 1) {
+        DSADiagLog([NSString stringWithFormat:@"[PUSH] list=%@ move=0 (already=%.0f, enough)",
+                     NSStringFromClass([list class]), already]);
+        return YES;
+    }
+
+    NSLayoutConstraint *hitC = nil;
+    for (NSLayoutConstraint *c in container.constraints) {
+        if (c.firstItem == list && c.firstAttribute == NSLayoutAttributeTop &&
+            c.relation == NSLayoutRelationEqual) { hitC = c; break; }
+    }
+    if (!hitC) {
+        for (NSLayoutConstraint *c in list.constraints) {
+            if (c.firstItem == container && c.firstAttribute == NSLayoutAttributeTop &&
+                c.relation == NSLayoutRelationEqual) { hitC = c; break; }
+        }
+    }
+    if (!hitC) {
+        for (NSLayoutConstraint *c in container.constraints) {
+            if (c.firstItem == list && c.firstAttribute == NSLayoutAttributeTop &&
+                c.relation != NSLayoutRelationGreaterThanOrEqual) { hitC = c; break; }
+        }
+    }
+    if (!hitC) { DSADiagLog(@"[PUSH] no top constraint found"); return NO; }
+
+    DSADiagLog([NSString stringWithFormat:@"[PUSH] list=%@ move=%.0f (already=%.0f) in %@",
+                 NSStringFromClass([list class]), moveBy, already, NSStringFromClass([container class])]);
+
+    CGFloat hBefore = searchBar ? searchBar.bounds.size.height : 0;
+    CGFloat c0 = hitC.constant;
+    hitC.constant += moveBy;
+    [container layoutIfNeeded];
+
+    if (searchBar) {
+        CGFloat hAfter = searchBar.bounds.size.height;
+        DSADiagLog([NSString stringWithFormat:@"[PUSH] search h %.0f -> %.0f", hBefore, hAfter]);
+        if (fabs(hAfter - hBefore) > 12) {           // 搜索框被拉伸 → 回滚
+            hitC.constant = c0;
+            [container layoutIfNeeded];
+            DSADiagLog(@"[PUSH] search bar stretched → rolled back");
+            return NO;
+        }
+    }
+    objc_setAssociatedObject(list, (__bridge const void *)kTot, @(already + moveBy),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    DSADiagLog([NSString stringWithFormat:@"[PUSH] ok total=%.0f constant=%.0f", already + moveBy, hitC.constant]);
+    return YES;
+}
+
 /// 打印 target 及祖先链在 window 里的坐标（诊断用）
 static void DSADumpGeom(UIView *target) {
     UIWindow *w = target.window;
@@ -202,58 +277,8 @@ BOOL DSAInsertIntoNativeList(void) {
             DSADiagLog([NSString stringWithFormat:@"[NATIVE] searchBottom=%.0f targetTop=%.0f need=%.0f",
                          searchBottomInHost, targetTopInHost, need]);
             if (need > 1) {
-                CGFloat hBefore = search.bounds.size.height;
-                // 找到要改的那条约束，先记下原值以便回滚
-                NSLayoutConstraint *hitC = nil;
-                for (NSLayoutConstraint *c in shost.constraints) {
-                    if (c.firstItem == target && c.firstAttribute == NSLayoutAttributeTop &&
-                        c.relation == NSLayoutRelationEqual) { hitC = c; break; }
-                }
-                if (!hitC) {
-                    for (NSLayoutConstraint *c in target.constraints) {
-                        if (c.firstAttribute == NSLayoutAttributeTop && c.relation == NSLayoutRelationEqual) {
-                            hitC = c; break;
-                        }
-                    }
-                }
-                if (!hitC) {
-                    DSADiagLog(@"[NATIVE] no top constraint to push, abort");
-                    [bar removeFromSuperview];
-                    return NO;
-                }
-                CGFloat c0 = hitC.constant;
-                // 与 NativeSidebar 共用累计 key，避免同一列表被推两次
-                static NSString *const kTot = @"DSATotalPush";
-                NSNumber *prev = objc_getAssociatedObject(target, (__bridge const void *)kTot);
-                CGFloat already = prev ? prev.doubleValue : 0;
-                CGFloat add = need - already;
-                if (add <= 1) add = 0;
-                DSADiagLog([NSString stringWithFormat:@"[NATIVE] need=%.0f already=%.0f add=%.0f",
-                             need, already, add]);
-                if (add == 0) {
-                    DSADiagLog(@"[NATIVE] already pushed enough, skip");
-                    [shost bringSubviewToFront:bar];
-                    objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                    objc_setAssociatedObject(shost, &kDSANativeBarTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                    objc_setAssociatedObject(w, &kDSANativeHostTag, shost, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                    DSADiagLog(@"[NATIVE] inserted BELOW SEARCH (no extra push)");
-                    DSARemoveFloatingPill();
-                    DSARemoveProbePill();
-                    return YES;
-                }
-                hitC.constant += add;
-                objc_setAssociatedObject(target, (__bridge const void *)kTot, @(already + add),
-                                         OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                [shost layoutIfNeeded];
-                CGFloat hAfter = search.bounds.size.height;
-                DSADiagLog([NSString stringWithFormat:@"[NATIVE] pushed by %.0f; search h %.0f -> %.0f",
-                             add, hBefore, hAfter]);
-                if (fabs(hAfter - hBefore) > 12) {          // 搜索框被拉伸了 → 回滚
-                    hitC.constant = c0;
-                    objc_setAssociatedObject(target, (__bridge const void *)kTot, @(already),
-                                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-                    [shost layoutIfNeeded];
-                    DSADiagLog(@"[NATIVE] search bar stretched → rolled back");
+                if (!DSAPushListToTotal(target, shost, need, search)) {
+                    DSADiagLog(@"[NATIVE] push failed, abort");
                     [bar removeFromSuperview];
                     return NO;
                 }

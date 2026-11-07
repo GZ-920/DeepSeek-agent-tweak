@@ -23,6 +23,8 @@ void DSAEnsureEntry(UIView *view);
 void DSAEnsureFloatingEntry(void);
 // NativeInsert.m
 void DSAEnsureNativeEntry(void);
+UIView *DSAFindSessionListView(void);
+BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat neededTotal, UIView *searchBar);
 // NativeSidebar.m
 void DSAEnsureNativeSidebar(void);
 void DSARefreshNativeSidebar(void);
