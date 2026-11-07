@@ -11,8 +11,9 @@ DSAAgent_FILES = src/Tweak.xm \
                  src/AgentListController.m \
                  src/Entry.m \
                  src/Inject.m \
-                 src/Trigger.m
-DSAAgent_CFLAGS = -fobjc-arc -I src -Wno-unused-function -Wno-deprecated-declarations
+                 src/Trigger.m \
+                 src/SelfTest.m
+DSAAgent_CFLAGS = -fobjc-arc -DDSA_SELFTEST=1 -I src -Wno-unused-function -Wno-deprecated-declarations
 DSAAgent_FRAMEWORKS = UIKit Foundation
 DSAAgent_INSTALL_PATH = /Library/MobileSubstrate/DynamicLibraries
 
