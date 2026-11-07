@@ -50,51 +50,47 @@ void DSAProbeWindows(void) {
 ///   B UIView + 背景 + label 子视图
 ///   C UIControl + 背景 + 圆角（已知不显示）
 ///   D UIView + 背景 + 圆角（判断是不是圆角/裁剪的锅）
+/// 真正的入口：挂在窗口右上角（这条链路已验证会执行）
+static void DSAInstallPillOnWindow(UIWindow *w) {
+    if (!w) return;
+    if (objc_getAssociatedObject(w, @"DSAEntryPill")) {
+        [(UIView *)objc_getAssociatedObject(w, @"DSAEntryPill") superview] ?: nil;
+        [w bringSubviewToFront:(UIView *)objc_getAssociatedObject(w, @"DSAEntryPill")];
+        return;
+    }
+    CGFloat safeTop = 0;
+    if (@available(iOS 11.0, *)) safeTop = w.safeAreaInsets.top;
+    if (safeTop <= 0) safeTop = 48;
+    CGRect f = CGRectMake(w.bounds.size.width - 92, safeTop + 6, 84, 34);
+
+    UIControl *pill = [[UIControl alloc] initWithFrame:f];
+    pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
+    pill.layer.cornerRadius = 17;
+    pill.clipsToBounds = YES;
+    [pill addTarget:NSClassFromString(@"DSAEntryProxy")
+             action:NSSelectorFromString(@"tapped")
+   forControlEvents:UIControlEventTouchUpInside];
+
+    UILabel *l = [[UILabel alloc] initWithFrame:pill.bounds];
+    l.text = @"🤖 智能体";
+    l.textColor = UIColor.whiteColor;
+    l.textAlignment = NSTextAlignmentCenter;
+    l.font = [UIFont boldSystemFontOfSize:13];
+    l.userInteractionEnabled = NO;
+    [pill addSubview:l];
+
+    [w addSubview:pill];
+    [w bringSubviewToFront:pill];
+    objc_setAssociatedObject(w, @"DSAEntryPill", pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    NSLog(@"[DSAgent] ENTRY pill at %@", NSStringFromCGRect(pill.frame));
+}
+
 void DSAProbeVariants(void) {
     @try {
         UIWindow *w = DSAKeyWindow();
-        if (!w) return;
-        CGFloat baseY = 200;
-        NSArray *colors = @[ [UIColor greenColor],
-                             [UIColor orangeColor],
-                             [UIColor purpleColor],
-                             [UIColor blueColor] ];
-        for (int i = 0; i < 4; i++) {
-            CGRect f = CGRectMake(8 + i * 84, baseY, 76, 34);
-            UIView *v;
-            if (i == 2) v = [[UIControl alloc] initWithFrame:f];
-            else v = [[UIView alloc] initWithFrame:f];
-            v.backgroundColor = colors[i];
-            if (i == 3) { v.layer.cornerRadius = 17; v.clipsToBounds = YES; }
-            if (i == 1) {
-                UILabel *l = [[UILabel alloc] initWithFrame:v.bounds];
-                l.text = @"字";
-                l.textColor = UIColor.whiteColor;
-                l.textAlignment = NSTextAlignmentCenter;
-                l.font = [UIFont boldSystemFontOfSize:13];
-                [v addSubview:l];
-            }
-            [w addSubview:v];
-        }
-
-        // ★ 第 5 个：真正的「智能体」胶囊，和上面完全同一段代码、同一时机
-        if (!objc_getAssociatedObject(w, @"DSAProbePill")) {
-            CGRect f = CGRectMake(8 + 4 * 84, baseY, 76, 34);
-            UIControl *pill = [[UIControl alloc] initWithFrame:f];
-            pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
-            pill.layer.cornerRadius = 17;
-            pill.clipsToBounds = YES;
-            UILabel *l = [[UILabel alloc] initWithFrame:pill.bounds];
-            l.text = @"智能体";
-            l.textColor = UIColor.whiteColor;
-            l.textAlignment = NSTextAlignmentCenter;
-            l.font = [UIFont boldSystemFontOfSize:13];
-            [pill addSubview:l];
-            [w addSubview:pill];
-            objc_setAssociatedObject(w, @"DSAProbePill", pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            NSLog(@"[DSAgent] probe pill at %@ / window %@ bounds %@",
-                  NSStringFromCGRect(pill.frame), NSStringFromClass([w class]), NSStringFromCGRect(w.bounds));
-        }
+        if (!w) { NSLog(@"[DSAgent] variants: no window"); return; }
+        // 已验证有效的链路：这里直接挂真正的入口
+        DSAInstallPillOnWindow(w);
     } @catch (__unused NSException *e) {
         NSLog(@"[DSAgent] variants failed %@", e.reason);
     }
