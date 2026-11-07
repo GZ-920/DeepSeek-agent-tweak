@@ -5,6 +5,13 @@
 #import <objc/runtime.h>
 #import "DSAShared.h"
 
+// Sidebar.m 里定义
+@interface DSAEntryProxy : NSObject
++ (void)tapped;
++ (void)tapMask;
++ (void)closePanel;
+@end
+
 /// 把场景里所有 window 的层级/尺寸/keyWindow/rootVC 写进文件
 void DSAProbeWindows(void) {
     @try {
