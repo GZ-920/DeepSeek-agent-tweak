@@ -1,10 +1,15 @@
 //
 //  Inject.m — 智能体首条设定提示词注入
 //
+//  关键教训：这个环境下 hook（viewDidAppear:）不触发，只有 %ctor 的定时任务可靠。
+//  所以注入不依赖 hook，改为：启动后每秒轮询一次，条件满足就填输入框 + 发送。
+//
 #import <UIKit/UIKit.h>
+#import <objc/runtime.h>
 #import "DSAShared.h"
 #import "AgentStore.h"
 
+void DSADiagLog(NSString *line);
 
 // sessionId -> 待发送提示词
 static NSMutableDictionary<NSString *, NSString *> *DSAPending(void) {
@@ -17,7 +22,8 @@ static NSMutableDictionary<NSString *, NSString *> *DSAPending(void) {
 static void DSAWalk(UIView *root, void (^block)(UIView *)) {
     if (!root) return;
     NSMutableArray *stack = [NSMutableArray arrayWithObject:root];
-    while (stack.count) {
+    int guard = 0;
+    while (stack.count && guard++ < 5000) {
         UIView *v = stack.lastObject;
         [stack removeLastObject];
         if (v.hidden || v.alpha < 0.05) continue;
@@ -26,95 +32,105 @@ static void DSAWalk(UIView *root, void (^block)(UIView *)) {
     }
 }
 
-extern void DSADiagLog(NSString *line);
+#pragma mark - 找输入框 / 发送按钮
 
 static UITextView *DSAFindPromptTextView(void) {
-    UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
+    UIWindow *w = DSAKeyWindow();
+    if (!w) return nil;
     __block UITextView *best = nil;
     __block CGFloat bestArea = 0;
-    DSAWalk(top.view, ^(UIView *v) {
-        if (![v isKindOfClass:[UITextView class]] || !v.isUserInteractionEnabled) return;
+    DSAWalk(w, ^(UIView *v) {
+        if (![v isKindOfClass:[UITextView class]]) return;
+        if (!v.isUserInteractionEnabled) return;
+        if (!v.window) return;
         CGFloat area = v.frame.size.width * v.frame.size.height;
-        if (area > bestArea && v.window) { best = (UITextView *)v; bestArea = area; }
+        if (area > bestArea) { best = (UITextView *)v; bestArea = area; }
     });
-    DSADiagLog([NSString stringWithFormat:@"[INPUT] tv=%@", best ? NSStringFromClass([best class]) : @"nil"]);
     return best;
 }
 
-static UIButton *DSAFindSendButton(void) {
-    UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
-    __block UIButton *send = nil;
-    DSAWalk(top.view, ^(UIView *v) {
-        if (send || ![v isKindOfClass:[UIButton class]] || !v.window) return;
+static UIView *DSAFindSendControl(void) {
+    UIWindow *w = DSAKeyWindow();
+    if (!w) return nil;
+    __block UIView *hit = nil;
+    DSAWalk(w, ^(UIView *v) {
+        if (hit || !v.window || !v.isUserInteractionEnabled) return;
+        if (![v isKindOfClass:[UIControl class]]) return;
         NSString *cls = NSStringFromClass([v class]);
         NSString *label = v.accessibilityLabel ?: @"";
-        if ([cls containsString:@"Send"] || [label containsString:@"发送"] ||
-            [label.lowercaseString containsString:@"send"])
-            send = (UIButton *)v;
+        NSString *aid = v.accessibilityIdentifier ?: @"";
+        BOOL isSend = [cls.lowercaseString containsString:@"send"] ||
+                      [label containsString:@"发送"] ||
+                      [label.lowercaseString containsString:@"send"] ||
+                      [aid.lowercaseString containsString:@"send"];
+        if (isSend) hit = v;
     });
-    DSADiagLog([NSString stringWithFormat:@"[SEND] btn=%@ label=%@", send ? NSStringFromClass([send class]) : @"nil",
-                 send ? (send.accessibilityLabel ?: @"") : @""]);
-    return send;
+    return hit;
 }
 
-/// 把提示词写进输入框并提交；返回 YES 表示已成功触发发送
+#pragma mark - 填入 + 发送
+
 BOOL DSASendPrompt(NSString *prompt) {
     if (!prompt.length) return NO;
     UITextView *tv = DSAFindPromptTextView();
-    if (!tv) return NO;
-    [tv becomeFirstResponder];
-    [tv setText:prompt];
-    [tv setSelectedRange:NSMakeRange(prompt.length, 0)];
-    [tv.delegate textViewDidChange:tv];
-    [[NSNotificationCenter defaultCenter] postNotificationName:UITextViewTextDidChangeNotification object:tv];
-    UIButton *send = DSAFindSendButton();
-    if (!send || !send.enabled) return NO;      // 输入框已填好，等用户按发送
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)),
+    if (!tv) { DSADiagLog(@"[INJ] no textview"); return NO; }
+
+    @try {
+        [tv becomeFirstResponder];
+        [tv setText:prompt];
+        [tv setSelectedRange:NSMakeRange(prompt.length, 0)];
+        [tv.delegate textViewDidChange:tv];
+        [[NSNotificationCenter defaultCenter] postNotificationName:UITextViewTextDidChangeNotification object:tv];
+    } @catch (__unused NSException *e) {
+        DSADiagLog([NSString stringWithFormat:@"[INJ] set text failed %@", e.reason]);
+        return NO;
+    }
+    DSADiagLog([NSString stringWithFormat:@"[INJ] text set len=%lu", (unsigned long)prompt.length]);
+
+    UIView *send = DSAFindSendControl();
+    if (!send) {
+        DSADiagLog(@"[INJ] no send control (text is in box, user can tap send)");
+        return NO;
+    }
+    DSADiagLog([NSString stringWithFormat:@"[INJ] send control %@", NSStringFromClass([send class])]);
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
-        [send sendActionsForControlEvents:UIControlEventTouchUpInside];
+        if ([send isKindOfClass:[UIControl class]])
+            [(UIControl *)send sendActionsForControlEvents:UIControlEventTouchUpInside];
     });
     return YES;
 }
 
-static void DSARetryPending(NSString *sessionId, int attempt) {
-    if (attempt > 8) {
-        DSAToast(@"设定提示词已填进输入框，请点发送");
-        return;
-    }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        DSAStore *store = [DSAStore shared];
-        NSString *p = DSAPending()[sessionId];
-        if (!p || [store sessionInjected:sessionId]) return;
-        if (DSASendPrompt(p)) {
-            [DSAPending() removeObjectForKey:sessionId];
-            [store markSessionInjected:sessionId];
-        } else {
-            DSARetryPending(sessionId, attempt + 1);
-        }
-    });
+#pragma mark - 轮询（不依赖 hook）
+
+void DSAStartInjectionPolling(void) {
+    // 轮询在 Tweak.xm 的 %ctor 里启动（DSAInjectTick 由定时任务调用）
 }
 
-/// 会话页出现时调用
-void DSAOnSessionShown(NSString *sessionId) {
-    if (!sessionId.length) return;
-    DSADiagLog([NSString stringWithFormat:@"[SESSION] shown sid=%@ pending=%@",
-                 [sessionId substringToIndex:MIN((NSUInteger)12, sessionId.length)],
-                 [[DSAStore shared] pendingAgentId] ?: @"none"]);
-    DSAStore *store = [DSAStore shared];
-    [store loadIfNeeded];
-    NSString *pending = [store pendingAgentId];
-
-    if (pending.length) {
-        DSAAgent *agent = [store agentWithId:pending];
-        [store setPendingAgentId:nil];
-        if (!agent) return;
-        [store bindSession:sessionId toAgent:agent.agentId];
-        if ([store sessionInjected:sessionId]) return;
-        DSAPending()[sessionId] = agent.systemPrompt;
-        DSARetryPending(sessionId, 0);
-        return;
+// 每 1 秒轮询一次：有待发提示词 → 填输入框
+void DSAInjectTick(void) {
+    @try {
+        DSAStore *store = [DSAStore shared];
+        [store loadIfNeeded];
+        NSString *pending = [store pendingAgentId];
+        if (pending.length) {
+            DSAAgent *agent = [store agentWithId:pending];
+            if (agent && agent.systemPrompt.length) {
+                DSADiagLog(@"[POLL] pending agent found, trying to inject");
+                if (DSASendPrompt(agent.systemPrompt)) {
+                    [store setPendingAgentId:nil];
+                    DSADiagLog(@"[POLL] injected OK, pending cleared");
+                }
+            }
+        }
+        // 还有排队中的（曾填过但没发出去）
+        NSString *queued = DSAPending()[@"_q"];
+        if (queued.length) {
+            if (DSASendPrompt(queued)) {
+                [DSAPending() removeObjectForKey:@"_q"];
+            }
+        }
+    } @catch (__unused NSException *e) {
+        DSADiagLog([NSString stringWithFormat:@"[POLL] exception %@", e.reason]);
     }
-    if (DSAPending()[sessionId] && ![store sessionInjected:sessionId])
-        DSARetryPending(sessionId, 0);
 }

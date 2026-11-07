@@ -34,6 +34,10 @@ void DSAStartTapProbe(void);
 void DSAInstallSelfTest(void);
 void DSAScanControls(id vc);
 void DSAForceShowAgents(void);
+// Inject.m
+void DSAInjectTick(void);
+void DSAStartInjectionPolling(void);
+void DSADiagLog(NSString *line);
 // Sidebar.m
 void DSAShowSidebar(void);
 void DSAHideSidebar(void);
