@@ -98,6 +98,26 @@ static void DSADumpGeom(UIView *target) {
     DSADiagLog([NSString stringWithFormat:@"[NATIVE] geom%@", out]);
 }
 
+/// 找搜索框（真机类名 DeepSeek_Chat.SessionListSearchBarView）
+static UIView *DSAFindSearchBar(UIView *root) {
+    NSMutableArray *stack = [NSMutableArray arrayWithObject:root];
+    int guard = 0;
+    UIView *best = nil;
+    while (stack.count && guard++ < 4000) {
+        UIView *v = stack.lastObject;
+        [stack removeLastObject];
+        for (UIView *s2 in v.subviews) [stack addObject:s2];
+        if (!v.window) continue;
+        NSString *c = NSStringFromClass([v class]);
+        if ([c containsString:@"SearchBar"] || [c containsString:@"SearchField"]) {
+            // 取最靠上的那个
+            CGRect r = [v convertRect:v.bounds toView:nil];
+            if (!best || r.origin.y < [best convertRect:best.bounds toView:nil].origin.y) best = v;
+        }
+    }
+    return best;
+}
+
 /// 尝试把钉住 target.top 的约束常量加大 44pt，腾出空间
 static BOOL DSAMakeRoom(UIView *target, UIView *host) {
     for (NSLayoutConstraint *c in host.constraints) {
@@ -144,32 +164,70 @@ BOOL DSAInsertIntoNativeList(void) {
 
     DSADumpGeom(target);
 
-    // 列表在 host 里的顶部位置
-    CGRect tf = [target convertRect:target.bounds toView:host];
-    CGFloat gap = tf.origin.y;
-    BOOL needRoom = (gap < 40);
-    if (needRoom) {
-        if (!DSAMakeRoom(target, host)) {
-            DSADiagLog(@"[NATIVE] cannot make room (no top constraint found), keeping pill");
-            return NO;   // 腾不出空间就别插，避免条跑到状态栏
+    // —— 优先：锚定到搜索框正下方 ——
+    UIView *search = DSAFindSearchBar(target.window ?: target);
+    UIView *bar = DSAMakeNativeBar();
+    bar.translatesAutoresizingMaskIntoConstraints = NO;
+
+    if (search && search != target) {
+        UIView *shost = search.superview;
+        if (!shost) shost = host;
+        if (objc_getAssociatedObject(shost, &kDSANativeBarTag)) return NO;
+        [shost addSubview:bar];
+
+        CGRect sr = [search convertRect:search.bounds toView:shost];
+        // 条 = 搜索框下沿起，高 44
+        [NSLayoutConstraint activateConstraints:@[
+            [bar.topAnchor constraintEqualToAnchor:search.bottomAnchor],
+            [bar.heightAnchor constraintEqualToConstant:44],
+            [bar.leadingAnchor constraintEqualToAnchor:search.leadingAnchor],
+            [bar.trailingAnchor constraintEqualToAnchor:search.trailingAnchor],
+        ]];
+        // 列表不能盖住条：把它推到条下面
+        if (target.superview == shost || [target isDescendantOfView:shost]) {
+            NSLayoutConstraint *push = [NSLayoutConstraint constraintWithItem:target
+                                                                   attribute:NSLayoutAttributeTop
+                                                                   relatedBy:NSLayoutRelationGreaterThanOrEqual
+                                                                      toItem:bar
+                                                                   attribute:NSLayoutAttributeBottom
+                                                                  multiplier:1 constant:0];
+            push.priority = UILayoutPriorityRequired;
+            [push activate];
         }
-        tf = [target convertRect:target.bounds toView:host];
+        [shost bringSubviewToFront:bar];
+        objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(shost, &kDSANativeBarTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        DSADiagLog([NSString stringWithFormat:@"[NATIVE] inserted BELOW SEARCH on %@ (shost %@)",
+                     NSStringFromClass([search class]), NSStringFromClass([shost class])]);
+        DSARemoveFloatingPill();
+        DSARemoveProbePill();
+        return YES;
+    }
+
+    // —— 兜底：列表上方空隙 ——
+    UIView *host2 = host;
+    CGRect tf = [target convertRect:target.bounds toView:host2];
+    CGFloat gap = tf.origin.y;
+    if (gap < 40) {
+        if (!DSAMakeRoom(target, host2)) {
+            DSADiagLog(@"[NATIVE] cannot make room (no top constraint found), keeping pill");
+            return NO;
+        }
+        tf = [target convertRect:target.bounds toView:host2];
         gap = tf.origin.y;
         DSADiagLog([NSString stringWithFormat:@"[NATIVE] gap after push = %.0f", gap]);
         if (gap < 40) return NO;
     }
 
-    UIView *bar = DSAMakeNativeBar();
-    bar.translatesAutoresizingMaskIntoConstraints = NO;
-    [host addSubview:bar];
-
-    NSLayoutConstraint *bottom = [bar.bottomAnchor constraintEqualToAnchor:target.topAnchor];
-    NSLayoutConstraint *h = [bar.heightAnchor constraintEqualToConstant:MIN(gap, 44.0)];
-    NSLayoutConstraint *lead = [bar.leadingAnchor constraintEqualToAnchor:target.leadingAnchor];
-    NSLayoutConstraint *trail = [bar.trailingAnchor constraintEqualToAnchor:target.trailingAnchor];
-    NSLayoutConstraint *topGuard = [bar.topAnchor constraintGreaterThanOrEqualToAnchor:host.topAnchor];
-    [NSLayoutConstraint activateConstraints:@[bottom, h, lead, trail, topGuard]];
-    [host bringSubviewToFront:bar];
+    [host2 addSubview:bar];
+    [NSLayoutConstraint activateConstraints:@[
+        [bar.bottomAnchor constraintEqualToAnchor:target.topAnchor],
+        [bar.heightAnchor constraintEqualToConstant:MIN(gap, 44.0)],
+        [bar.leadingAnchor constraintEqualToAnchor:target.leadingAnchor],
+        [bar.trailingAnchor constraintEqualToAnchor:target.trailingAnchor],
+        [bar.topAnchor constraintGreaterThanOrEqualToAnchor:host2.topAnchor],
+    ]];
+    [host2 bringSubviewToFront:bar];
 
     objc_setAssociatedObject(target, &kDSANativeTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     objc_setAssociatedObject(host, &kDSANativeBarTag, bar, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
