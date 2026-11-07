@@ -321,9 +321,9 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] cur=%.0f want=%.0f delta=%.0f", cur, want, delta]);
         if (delta > 1) {
             if (!DSAPushListToTotal(below, below.superview ?: host, delta, nil)) {
-                DSADiagLog(@"[SIDEBAR] push failed, remove section to avoid overlap");
-                [sec removeFromSuperview];
-                return NO;
+                // ★ 不移除：移除会导致「出现→消失」闪烁。保留区块，宁可轻微重叠
+                DSADiagLog(@"[SIDEBAR] push failed → keep section (may overlap)");
+                [host bringSubviewToFront:sec];
             }
         }
     } else {

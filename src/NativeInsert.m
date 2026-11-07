@@ -107,24 +107,39 @@ BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat moveBy, UIView 
         return YES;
     }
 
+    // 在 container / list / 各级祖先里找「钉住 list.top 的等式约束」
     NSLayoutConstraint *hitC = nil;
-    for (NSLayoutConstraint *c in container.constraints) {
-        if (c.firstItem == list && c.firstAttribute == NSLayoutAttributeTop &&
-            c.relation == NSLayoutRelationEqual) { hitC = c; break; }
-    }
-    if (!hitC) {
-        for (NSLayoutConstraint *c in list.constraints) {
-            if (c.firstItem == container && c.firstAttribute == NSLayoutAttributeTop &&
-                c.relation == NSLayoutRelationEqual) { hitC = c; break; }
-        }
-    }
-    if (!hitC) {
-        for (NSLayoutConstraint *c in container.constraints) {
+    NSMutableArray *owners = [NSMutableArray array];
+    if (container) [owners addObject:container];
+    if (list.superview) [owners addObject:list.superview];
+    if (list) [owners addObject:list];
+    UIView *up = list.superview;
+    for (int i = 0; i < 5 && up; i++, up = up.superview) [owners addObject:up];
+
+    for (UIView *ov in owners) {
+        for (NSLayoutConstraint *c in ov.constraints) {
             if (c.firstItem == list && c.firstAttribute == NSLayoutAttributeTop &&
-                c.relation != NSLayoutRelationGreaterThanOrEqual) { hitC = c; break; }
+                c.relation == NSLayoutRelationEqual && c.isActive) {
+                hitC = c; break;
+            }
+        }
+        if (hitC) break;
+    }
+    if (!hitC) {
+        // 退而求其次：任何非 >= 的 top 等式
+        for (UIView *ov in owners) {
+            for (NSLayoutConstraint *c in ov.constraints) {
+                if (c.firstItem == list && c.firstAttribute == NSLayoutAttributeTop &&
+                    c.relation != NSLayoutRelationGreaterThanOrEqual) { hitC = c; break; }
+            }
+            if (hitC) break;
         }
     }
-    if (!hitC) { DSADiagLog(@"[PUSH] no top constraint found"); return NO; }
+    if (!hitC) {
+        DSADiagLog([NSString stringWithFormat:@"[PUSH] no top constraint for %@ in %lu owners",
+                     NSStringFromClass([list class]), (unsigned long)owners.count]);
+        return NO;
+    }
 
     DSADiagLog([NSString stringWithFormat:@"[PUSH] list=%@ move=%.0f (already=%.0f) in %@",
                  NSStringFromClass([list class]), moveBy, already, NSStringFromClass([container class])]);
