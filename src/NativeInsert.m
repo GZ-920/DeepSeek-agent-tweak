@@ -175,7 +175,6 @@ BOOL DSAInsertIntoNativeList(void) {
         if (objc_getAssociatedObject(shost, &kDSANativeBarTag)) return NO;
         [shost addSubview:bar];
 
-        CGRect sr = [search convertRect:search.bounds toView:shost];
         // 条 = 搜索框下沿起，高 44
         [NSLayoutConstraint activateConstraints:@[
             [bar.topAnchor constraintEqualToAnchor:search.bottomAnchor],
