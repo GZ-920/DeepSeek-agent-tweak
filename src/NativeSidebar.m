@@ -49,6 +49,8 @@ static UIView *DSAMakeAgentSection(void) {
         l.text = t;
         l.font = [UIFont systemFontOfSize:fsz - 2 weight:UIFontWeightSemibold];
         l.textColor = [UIColor secondaryLabelColor];
+        // ★ 必须先加入 stack，否则两者无公共祖先，激活约束会抛异常
+        [stack addArrangedSubview:l];
         [NSLayoutConstraint activateConstraints:@[
             [l.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:lead],
             [l.trailingAnchor constraintEqualToAnchor:stack.trailingAnchor constant:-lead],
@@ -83,6 +85,7 @@ static UIView *DSAMakeAgentSection(void) {
         [row addSubview:lab2];
 
         lab.font = [UIFont systemFontOfSize:fsz];
+        [stack addArrangedSubview:row];
         [NSLayoutConstraint activateConstraints:@[
             [row.heightAnchor constraintEqualToConstant:rowH],
             [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:lead],
@@ -96,13 +99,13 @@ static UIView *DSAMakeAgentSection(void) {
     };
 
     // —— 1) 智能体对话（顶部）——
-    [stack addArrangedSubview:makeHeader(@"智能体对话")];
+    makeHeader(@"智能体对话");
     NSInteger convCount = 0;
     for (DSAAgent *ag in agents) {
         for (NSString *sid in [store sessionIdsForAgent:ag.agentId]) {
             NSString *cn = [store conversationNameForSession:sid];
             NSString *label = cn.length ? [NSString stringWithFormat:@"%@ · %@", ag.name, cn] : ag.name;
-            [stack addArrangedSubview:makeRow(label, nil, label, sid, @selector(convRowTapped:))];
+            makeRow(label, nil, label, sid, @selector(convRowTapped:));
             if (++convCount >= 8) break;
         }
         if (convCount >= 8) break;
@@ -118,9 +121,9 @@ static UIView *DSAMakeAgentSection(void) {
     }
 
     // —— 2) 智能体（点击直接开新对话）——
-    [stack addArrangedSubview:makeHeader(@"智能体")];
+    makeHeader(@"智能体");
     for (DSAAgent *ag in agents) {
-        [stack addArrangedSubview:makeRow(ag.name, nil, ag.name, ag.agentId, @selector(agentRowTapped:))];
+        makeRow(ag.name, nil, ag.name, ag.agentId, @selector(agentRowTapped:));
     }
     if (!agents.count) {
         UILabel *empty = [[UILabel alloc] initWithFrame:CGRectZero];
@@ -133,8 +136,8 @@ static UIView *DSAMakeAgentSection(void) {
     }
 
     // —— 3) 设置（新增/删除都在这里）——
-    [stack addArrangedSubview:makeHeader(@"设置")];
-    [stack addArrangedSubview:makeRow(@"管理智能体", @"新增或删除", @"管理智能体", @"", @selector(settingsTapped:))];
+    makeHeader(@"设置");
+    makeRow(@"管理智能体", @"新增或删除", @"管理智能体", @"", @selector(settingsTapped:));
 
     [NSLayoutConstraint activateConstraints:@[
         [stack.topAnchor constraintEqualToAnchor:sec.topAnchor],
