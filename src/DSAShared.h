@@ -29,6 +29,9 @@ void DSAOpenNewChatWithAgent(DSAAgent *agent);
 void DSAInstallSelfTest(void);
 void DSAScanControls(id vc);
 void DSAForceShowAgents(void);
+// Probe.m
+void DSAProbeWindows(void);
+void DSAProbeSquare(void);
 
 #ifdef __cplusplus
 }
