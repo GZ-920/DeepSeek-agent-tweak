@@ -333,6 +333,25 @@ void DSAShowSidebar(void) {
             NSString *lab = v.accessibilityLabel ?: @"";
             if ([lab isEqualToString:@"open_sidebar"] || [lab containsString:@"sidebar"]) { hit = v; break; }
         }
+        // 侧边栏已经展开 → 不要再点开关（会把它关掉）
+        extern void DSAEnsureNativeSidebar(void);
+        (void)DSAEnsureNativeSidebar;
+        BOOL sidebarVisible = NO;
+        NSMutableArray *st2 = [NSMutableArray arrayWithObject:(UIView *)w];
+        int g3 = 0;
+        while (st2.count && g3++ < 3000) {
+            UIView *v = st2.lastObject;
+            [st2 removeLastObject];
+            for (UIView *s2 in v.subviews) [st2 addObject:s2];
+            if (!v.window || v.hidden || v.alpha < 0.05) continue;
+            NSString *c = NSStringFromClass([v class]);
+            if ([c containsString:@"Sidebar"] && v.bounds.size.width > 0 &&
+                v.bounds.size.width < w.bounds.size.width * 0.9) { sidebarVisible = YES; break; }
+        }
+        if (sidebarVisible) {
+            DSADiagLog(@"[ENTRY] native sidebar already open, do nothing");
+            return;
+        }
         if (hit && [hit isKindOfClass:[UIControl class]]) {
             [(UIControl *)hit sendActionsForControlEvents:UIControlEventTouchUpInside];
             DSADiagLog(@"[ENTRY] opened native sidebar via open_sidebar");

@@ -175,49 +175,61 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         [sec.trailingAnchor constraintEqualToAnchor:anchor.trailingAnchor],
     ]];
 
-    // 把锚点之后的内容往下推：调大列表原有的顶部约束
+    // 找「被区块挡住的列表」：host 的后代里第一个不是锚点的列表
     UIView *below = nil;
-    if (anchor != sidebar) {
-        for (UIView *s in host.subviews) {
-            if (s == anchor || s == sec) continue;
-            if ([s isKindOfClass:[UITableView class]] || [s isKindOfClass:[UICollectionView class]]) {
-                below = s; break;
+    {
+        NSMutableArray *st = [NSMutableArray arrayWithObject:host];
+        int g2 = 0;
+        while (st.count && g2++ < 3000) {
+            UIView *v = st.lastObject;
+            [st removeLastObject];
+            for (UIView *s2 in v.subviews) [st addObject:s2];
+            if (v == anchor || v == sec) continue;
+            if ([v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]]) {
+                below = v; break;
             }
         }
     }
+
+    [host layoutIfNeeded];
+    CGFloat secTop = [sec convertRect:sec.bounds toView:host].origin.y;
+    CGFloat secH = [sec systemLayoutSizeFittingSize:CGSizeMake(host.bounds.size.width, 0)
+                    withHorizontalFittingPriority:UILayoutPriorityRequired
+                          verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
+    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sec top=%.0f h=%.0f below=%@",
+                 secTop, secH, below ? NSStringFromClass([below class]) : @"nil"]);
+
     if (below) {
-        CGFloat secHeight = 26 + 36 * ((NSInteger)[DSAStore shared].agents.count + 1);
         CGFloat cur = [below convertRect:below.bounds toView:host].origin.y;
-        CGFloat want = [sec convertRect:sec.bounds toView:host].origin.y + secHeight + 8;
+        CGFloat want = secTop + secH + 8;
         CGFloat delta = want - cur;
-        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] below=%@ cur=%.0f want=%.0f delta=%.0f",
-                     NSStringFromClass([below class]), cur, want, delta]);
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] cur=%.0f want=%.0f delta=%.0f", cur, want, delta]);
         if (delta > 1) {
             BOOL pushed = NO;
-            for (NSLayoutConstraint *c in host.constraints) {
-                if (c.firstItem == below && c.firstAttribute == NSLayoutAttributeTop &&
-                    c.relation == NSLayoutRelationEqual) {
-                    c.constant += delta; pushed = YES;
-                    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] pushed via host constraint constant=%.0f", c.constant]);
-                    break;
-                }
-            }
-            if (!pushed) {
-                for (NSLayoutConstraint *c in below.constraints) {
-                    if (c.firstAttribute == NSLayoutAttributeTop &&
+            // 在多个容器里找「钉住 below.top 的等式约束」
+            NSArray *owners = @[ below.superview ?: (id)[NSNull null], host, below ];
+            for (id owner in owners) {
+                if (![owner isKindOfClass:[UIView class]]) continue;
+                UIView *ov = (UIView *)owner;
+                for (NSLayoutConstraint *c in ov.constraints) {
+                    if (c.firstItem == below && c.firstAttribute == NSLayoutAttributeTop &&
                         c.relation == NSLayoutRelationEqual) {
                         c.constant += delta; pushed = YES;
-                        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] pushed via below constraint constant=%.0f", c.constant]);
+                        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] pushed in %@ constant=%.0f",
+                                     NSStringFromClass([ov class]), c.constant]);
                         break;
                     }
                 }
+                if (pushed) break;
             }
             if (!pushed) {
-                DSADiagLog(@"[SIDEBAR] cannot push, remove section to avoid overlap");
+                DSADiagLog(@"[SIDEBAR] cannot push list down");
                 [sec removeFromSuperview];
                 return NO;
             }
         }
+    } else {
+        DSADiagLog(@"[SIDEBAR] no list below anchor");
     }
 
     [host bringSubviewToFront:sec];
