@@ -244,96 +244,68 @@ static UIView *DSAFindNativeSidebar(UIWindow *w) {
 #pragma mark - 插入
 
 static BOOL DSAInsertSection(UIView *sidebar) {
-    if (objc_getAssociatedObject(sidebar, &kDSASidebarSectionTag)) return YES;
+    UIWindow *w = sidebar.window ?: DSAKeyWindow();
+    if (!w) return NO;
 
-    // 找锚点：搜索框 → SessionList 类 → 滚动视图 → 最大的内容视图
+    // 找锚点：侧边栏里的搜索框（用于定位 + 取排版参数）
     UIView *anchor = nil;
-    NSMutableString *dump = [NSMutableString string];
     NSMutableArray *stack = [NSMutableArray arrayWithObject:sidebar];
     int guard = 0;
-    NSMutableArray<UIView *> *cands = [NSMutableArray array];
     while (stack.count && guard++ < 4000) {
         UIView *v = stack.lastObject;
         [stack removeLastObject];
         for (UIView *s2 in v.subviews) [stack addObject:s2];
         if (!v.window) continue;
         NSString *c = NSStringFromClass([v class]);
-        [dump appendFormat:@"\n    %@ %.0fx%.0f", c, v.bounds.size.width, v.bounds.size.height];
-        if ([c containsString:@"Search"] || [c containsString:@"SessionList"] ||
-            [v isKindOfClass:[UIScrollView class]]) [cands addObject:v];
-    }
-    // 优先级：Search > SessionList > 滚动视图
-    for (NSString *key in @[ @"Search", @"SessionList" ]) {
-        for (UIView *c in cands) {
-            if ([NSStringFromClass([c class]) containsString:key]) { anchor = c; break; }
-        }
-        if (anchor) break;
-    }
-    if (!anchor) {
-        for (UIView *c in cands) { if ([c isKindOfClass:[UIScrollView class]]) { anchor = c; break; } }
-    }
-    if (!anchor) {
-        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] no anchor in %@", dump]);
-        return NO;
+        if ([c containsString:@"SearchBar"] && v.bounds.size.width > 100) { anchor = v; break; }
     }
 
-    UIView *host = anchor.superview;
-    if (!host) return NO;
-
-    UIView *sec = DSAMakeAgentSection();
-    [host addSubview:sec];
-
-    // 锚点下方
-    [NSLayoutConstraint activateConstraints:@[
-        [sec.topAnchor constraintEqualToAnchor:anchor.bottomAnchor constant:8],
-        [sec.leadingAnchor constraintEqualToAnchor:anchor.leadingAnchor],
-        [sec.trailingAnchor constraintEqualToAnchor:anchor.trailingAnchor],
-    ]];
-
-    // ★ 找「被区块挡住的列表」：用共用的会话列表查找，保证和 NativeInsert 推的是同一个视图
-    UIView *below = DSAFindSessionListView();
-    if (!below) {
-        NSMutableArray *st = [NSMutableArray arrayWithObject:host];
-        int g2 = 0;
-        while (st.count && g2++ < 3000) {
-            UIView *v = st.lastObject;
-            [st removeLastObject];
-            for (UIView *s2 in v.subviews) [st addObject:s2];
-            if (v == anchor || v == sec) continue;
-            if ([v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]]) {
-                below = v; break;
-            }
-        }
+    // ★ 区块挂到 window（App 清不掉），用绝对坐标定位
+    UIView *sec = objc_getAssociatedObject(w, &kDSASidebarSectionTag);
+    if (!sec) {
+        sec = DSAMakeAgentSection();
+        sec.translatesAutoresizingMaskIntoConstraints = YES;   // 用 frame 定位
+        [w addSubview:sec];
+        objc_setAssociatedObject(w, &kDSASidebarSectionTag, sec, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        DSADiagLog(@"[SIDEBAR] section created on window");
     }
 
-    [host layoutIfNeeded];
-    CGFloat secTop = [sec convertRect:sec.bounds toView:host].origin.y;
-    CGFloat secH = [sec systemLayoutSizeFittingSize:CGSizeMake(host.bounds.size.width, 0)
-                    withHorizontalFittingPriority:UILayoutPriorityRequired
-                          verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
-    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sec top=%.0f h=%.0f below=%@",
-                 secTop, secH, below ? NSStringFromClass([below class]) : @"nil"]);
-
-    if (below) {
-        CGFloat cur = [below convertRect:below.bounds toView:host].origin.y;
-        CGFloat want = secTop + secH + 8;
-        CGFloat delta = want - cur;
-        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] cur=%.0f want=%.0f delta=%.0f", cur, want, delta]);
-        if (delta > 1) {
-            if (!DSAPushListToTotal(below, below.superview ?: host, delta, nil)) {
-                // ★ 不移除：移除会导致「出现→消失」闪烁。保留区块，宁可轻微重叠
-                DSADiagLog(@"[SIDEBAR] push failed → keep section (may overlap)");
-                [host bringSubviewToFront:sec];
-            }
-        }
+    // 定位：搜索框下沿（窗口坐标）
+    CGFloat sidebarX = [sidebar convertRect:sidebar.bounds toView:nil].origin.x;
+    CGFloat sidebarW = sidebar.bounds.size.width;
+    CGFloat top = 0;
+    if (anchor) {
+        CGRect r = [anchor convertRect:anchor.bounds toView:nil];
+        top = r.origin.y + r.size.height + 4;
     } else {
-        DSADiagLog(@"[SIDEBAR] no list below anchor");
+        CGRect r = [sidebar convertRect:sidebar.bounds toView:nil];
+        top = r.origin.y + 60;
     }
+    CGFloat width = sidebarW;
 
-    [host bringSubviewToFront:sec];
-    objc_setAssociatedObject(sidebar, &kDSASidebarSectionTag, sec, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section inserted (anchor %@, host %@)",
-                 NSStringFromClass([anchor class]), NSStringFromClass([host class])]);
+    // 算高度（内容自适应）
+    CGFloat h = [sec systemLayoutSizeFittingSize:CGSizeMake(width, 0)
+                  withHorizontalFittingPriority:UILayoutPriorityRequired
+                        verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
+    if (h < 40) h = 160;
+
+    sec.frame = CGRectMake(sidebarX, top, width, h);
+    [w bringSubviewToFront:sec];
+    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] placed at %.0f,%.0f %.0fx%.0f (anchor %@)",
+                 sidebarX, top, width, h, anchor ? NSStringFromClass([anchor class]) : @"nil"]);
+
+    // 列表下推（共用推送），失败也不移除区块
+    UIView *list = DSAFindSessionListView();
+    if (list) {
+        CGRect lr = [list convertRect:list.bounds toView:nil];
+        CGFloat need = (top + h + 8) - lr.origin.y;
+        if (need > 1) {
+            UIView *container = list.superview ?: sidebar;
+            if (!DSAPushListToTotal(list, container, need, nil)) {
+                DSADiagLog(@"[SIDEBAR] push failed → section stays on window");
+            }
+        }
+    }
     return YES;
 }
 
@@ -341,12 +313,10 @@ static BOOL DSAInsertSection(UIView *sidebar) {
 void DSARefreshNativeSidebar(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *w = DSAKeyWindow();
-        UIView *sb = DSAFindNativeSidebar(w);
-        if (!sb) return;
-        UIView *sec = objc_getAssociatedObject(sb, &kDSASidebarSectionTag);
+        UIView *sec = objc_getAssociatedObject(w, &kDSASidebarSectionTag);
         if (sec) {
             [sec removeFromSuperview];
-            objc_setAssociatedObject(sb, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(w, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             DSADiagLog(@"[SIDEBAR] section cleared for rebuild");
         }
     });
