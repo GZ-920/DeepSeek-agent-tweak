@@ -46,14 +46,22 @@ static UIView *DSAMakeEntryBar(void) {
     UIView *bar = [UIView new];
     bar.backgroundColor = UIColor.clearColor;
 
-    UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
+    UIControl *btn = [[UIControl alloc] initWithFrame:CGRectZero];
     btn.translatesAutoresizingMaskIntoConstraints = NO;
-    btn.contentHorizontalAlignment = UIControlContentHorizontalAlignmentLeft;
-    btn.contentEdgeInsets = UIEdgeInsetsMake(0, 16, 0, 16);
-    btn.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
-    [btn setTitle:@"🤖  智能体" forState:UIControlStateNormal];
     [btn addTarget:[DSAEntryProxy class] action:@selector(tapped) forControlEvents:UIControlEventTouchUpInside];
     [bar addSubview:btn];
+
+    UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
+    lab.translatesAutoresizingMaskIntoConstraints = NO;
+    lab.text = @"🤖  智能体";
+    lab.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
+    lab.textColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
+    lab.userInteractionEnabled = NO;
+    [btn addSubview:lab];
+    [NSLayoutConstraint activateConstraints:@[
+        [lab.leadingAnchor constraintEqualToAnchor:btn.leadingAnchor constant:16],
+        [lab.centerYAnchor constraintEqualToAnchor:btn.centerYAnchor],
+    ]];
 
     UIView *line = [UIView new];
     line.translatesAutoresizingMaskIntoConstraints = NO;
@@ -75,33 +83,42 @@ static UIView *DSAMakeEntryBar(void) {
 
 #pragma mark - B. 悬浮胶囊
 
-/// 悬浮胶囊：挂在 window 上，位置避开状态栏（顶部、右侧下方一点）
+/// 悬浮胶囊：不用 UIButton（App 可能全局改了 UIButton 的样式），改用 UIControl + UILabel 自绘
 static void DSAInstallFloatingEntry(void) {
     if (DSAFloatingDisabled()) return;
     UIWindow *w = DSAKeyWindow();
     if (!w) { NSLog(@"[DSAgent] floating: no key window"); return; }
-    if (objc_getAssociatedObject(w, &kDSAFloatingTag)) { NSLog(@"[DSAgent] floating: already there"); return; }
+    if (objc_getAssociatedObject(w, &kDSAFloatingTag)) return;
     if (dispatching) return;
 
-    UIButton *pill = [UIButton buttonWithType:UIButtonTypeSystem];
-    [pill setTitle:@"🤖 智能体" forState:UIControlStateNormal];
-    pill.titleLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
-    [pill setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:0.92];
+    UIControl *pill = [[UIControl alloc] initWithFrame:CGRectZero];
+    pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:0.95];
     pill.layer.cornerRadius = 17;
-    pill.layer.shadowColor = UIColor.blackColor.CGColor;
-    pill.layer.shadowOpacity = 0.18;
-    pill.layer.shadowRadius = 6;
-    pill.layer.shadowOffset = CGSizeMake(0, 2);
+    pill.clipsToBounds = YES;
+    pill.userInteractionEnabled = YES;
     [pill addTarget:[DSAEntryProxy class] action:@selector(tapped) forControlEvents:UIControlEventTouchUpInside];
 
-    CGFloat h = 34, wdt = 92;
+    UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
+    lab.text = @"智能体";
+    lab.font = [UIFont boldSystemFontOfSize:13];
+    lab.textColor = [UIColor whiteColor];
+    lab.textAlignment = NSTextAlignmentCenter;
+    lab.userInteractionEnabled = NO;
+    lab.backgroundColor = [UIColor clearColor];
+    [pill addSubview:lab];
+
+    CGSize size = CGSizeMake(76, 34);
     CGFloat safeTop = 0;
     if (@available(iOS 11.0, *)) safeTop = w.safeAreaInsets.top;
-    if (safeTop <= 0) safeTop = 44;                       // 状态栏兜底
-    pill.frame = CGRectMake(w.bounds.size.width - wdt - 10, safeTop + 6, wdt, h);
+    if (safeTop <= 0) safeTop = 44;
+    pill.frame = CGRectMake(w.bounds.size.width - size.width - 10, safeTop + 8,
+                            size.width, size.height);
+    lab.frame = pill.bounds;
     pill.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleBottomMargin;
+    lab.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    // 放到最上层，避免被后加的视图盖住
     [w addSubview:pill];
+    [w bringSubviewToFront:pill];
     objc_setAssociatedObject(w, &kDSAFloatingTag, pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     NSLog(@"[DSAgent] floating entry at %@ window=%@", NSStringFromCGRect(pill.frame),
           NSStringFromClass([w class]));
