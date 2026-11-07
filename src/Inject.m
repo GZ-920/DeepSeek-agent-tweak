@@ -18,7 +18,8 @@ void DSADiagLog(NSString *line);
 // —— 发送尝试状态：0=未开始, >0=已尝试次数, -1=已完成（不再动）——
 static int DSASendTries = 0;
 static const int kDSAMaxTries = 3;
-static BOOL DSARoundActive = NO;    // 本轮是否已填过（只认本次运行内填的，避免重启后残留状态误发）
+static BOOL DSARoundActive = NO;
+static NSString *DSALastAgentId = nil;   // 本轮使用的智能体（用于发送成功后绑定会话）    // 本轮是否已填过（只认本次运行内填的，避免重启后残留状态误发）
 
 // —— 最早允许填充的时间戳（点完新建对话要等新会话打开）——
 static NSTimeInterval DSAFillNotBefore = 0;
@@ -151,33 +152,59 @@ static BOOL DSATrySendOnce(void) {
 
 #pragma mark - 会话名 / 隐藏提示词
 
-/// 从导航栏抓当前会话标题，存为显示名
-static void DSACaptureConversationName(void) {
+/// 发送成功后：读出当前 sessionId → 绑定智能体 + 抓会话标题
+static void DSABindCurrentSession(void) {
     @try {
+        DSAStore *store = [DSAStore shared];
+        NSString *agentId = DSALastAgentId;
+        if (!agentId.length) return;
+
         UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
-        if (!top) return;
+        NSString *sid = nil;
+        // 逐个候选属性读 sessionId（Swift 存储属性经 KVC 可读）
+        for (NSString *k in @[ @"sessionId", @"sessionID", @"chatSessionId", @"currentSessionId",
+                               @"session_id", @"conversationId" ]) {
+            @try {
+                id v = [top valueForKey:k];
+                if ([v isKindOfClass:[NSString class]] && [v length]) { sid = v; break; }
+            } @catch (__unused NSException *e) {}
+        }
+        // 读不到就再挖一层 viewModel
+        if (!sid) {
+            for (NSString *k in @[ @"viewModel", @"vm", @"session", @"currentSession" ]) {
+                @try {
+                    id vm = [top valueForKey:k];
+                    for (NSString *k2 in @[ @"sessionId", @"sessionID", @"id" ]) {
+                        id v = [vm valueForKey:k2];
+                        if ([v isKindOfClass:[NSString class]] && [v length]) { sid = v; break; }
+                    }
+                    if (sid) break;
+                } @catch (__unused NSException *e) {}
+            }
+        }
+
+        if (!sid) {
+            DSADiagLog(@"[BIND] sessionId not readable from top VC");
+            return;
+        }
+        [store bindSession:sid toAgent:agentId];
+
+        // 抓会话标题
         NSString *title = top.navigationItem.title ?: top.title;
         if (!title.length) {
-            // 大标题 / 导航栏里的 UILabel
             UINavigationBar *bar = top.navigationController.navigationBar;
             for (UIView *v in bar.subviews) {
                 if (![v isKindOfClass:[UILabel class]]) continue;
                 NSString *t = ((UILabel *)v).text;
-                if (t.length && ![t isEqualToString:@"智能体"]) { title = t; break; }
+                if (t.length) { title = t; break; }
             }
         }
-        if (!title.length) return;
-        DSAStore *store = [DSAStore shared];
-        NSString *agentId = [store pendingAgentId];
-        // pending 已清 → 用最后一次绑定的会话（简单起见：绑到最近一个会话）
-        (void)agentId;
-        NSString *lastSid = [store lastBoundSessionId];
-        if (lastSid) {
-            [store setConversationName:title forSession:lastSid];
-            DSADiagLog([NSString stringWithFormat:@"[CONV] name=%@ sid=%@", title, lastSid]);
-        }
+        if (title.length) [store setConversationName:title forSession:sid];
+        DSADiagLog([NSString stringWithFormat:@"[BIND] sid=%@ agent=%@ title=%@",
+                     sid, agentId, title ?: @"(none)"]);
+        DSALastAgentId = nil;
     } @catch (__unused NSException *e) {
-        DSADiagLog([NSString stringWithFormat:@"[CONV] capture failed %@", e.reason]);
+        DSADiagLog([NSString stringWithFormat:@"[BIND] exception %@", e.reason]);
     }
 }
 
@@ -256,6 +283,7 @@ void DSAInjectTick(void) {
             [store setPendingAgentId:nil];                  // 填完立刻清，杜绝重复填
             DSASendTries = 0;                               // 进入发送阶段
             DSARoundActive = YES;
+            DSALastAgentId = [pending copy];                // 记住是哪个智能体
             DSADiagLog(@"[STATE] filled once, pending cleared, will try send");
             return;
         }
@@ -271,7 +299,7 @@ void DSAInjectTick(void) {
             if (cur.length == 0) {
                 DSASendTries = -1;
                 DSADiagLog(@"[STATE] input cleared → message sent OK");
-                DSACaptureConversationName();
+                DSABindCurrentSession();
                 DSAHidePromptMessages();
                 return;
             }

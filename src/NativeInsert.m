@@ -335,11 +335,11 @@ BOOL DSAInsertIntoNativeList(void) {
             DSADiagLog([NSString stringWithFormat:@"[NATIVE] searchBottom=%.0f targetTop=%.0f need=%.0f",
                          searchBottomInHost, targetTopInHost, need]);
             if (need > 1) {
-                if (!DSAPushListToTotal(target, shost, need, search)) {
-                    DSADiagLog(@"[NATIVE] push failed, abort");
-                    [bar removeFromSuperview];
-                    return NO;
-                }
+                // ★ 不为入口条推送：推送会在搜索框下方留出 44pt 空带，显得「搜索框很大」。
+                //   空间由侧边栏区块一次性腾出；这里只在已有空间时才放条。
+                DSADiagLog([NSString stringWithFormat:@"[NATIVE] gap=%.0f <44 → skip entry bar (no push)", need]);
+                [bar removeFromSuperview];
+                return NO;
             }
         }
         [shost bringSubviewToFront:bar];

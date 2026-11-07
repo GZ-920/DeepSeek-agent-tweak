@@ -343,10 +343,20 @@ void DSAEnsureNativeSidebar(void) {
     @try {
         UIWindow *w = DSAKeyWindow();
         UIView *sb = DSAFindNativeSidebar(w);
+        UIView *sec = w ? objc_getAssociatedObject(w, &kDSASidebarSectionTag) : nil;
         if (!sb) {
-            static BOOL logged = NO;
-            if (!logged) { logged = YES; DSADiagLog(@"[SIDEBAR] not visible yet (waiting for open)"); }
+            // ★ 侧边栏收起/不可见 → 隐藏区块（否则会留在屏幕左边）
+            if (sec && !sec.hidden) {
+                sec.hidden = YES;
+                sec.alpha = 0;
+                DSADiagLog(@"[SIDEBAR] sidebar closed → section hidden");
+            }
             return;
+        }
+        if (sec && sec.hidden) {
+            sec.hidden = NO;
+            sec.alpha = 1;
+            DSADiagLog(@"[SIDEBAR] sidebar opened → section shown");
         }
         DSAInsertSection(sb);
     } @catch (__unused NSException *e) {
