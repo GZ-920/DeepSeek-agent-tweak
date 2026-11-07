@@ -67,7 +67,6 @@ static UIView *DSAFindListByTree(void) {
 
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
-    DSAEnsureFloatingEntry();      // 页面出现时挂/保活悬浮入口（低频，安全）
     NSString *cls = NSStringFromClass([self class]);
     if ([cls containsString:@"MessageViewController"] ||
         [cls containsString:@"MessageListViewController"]) {
@@ -122,9 +121,14 @@ static UIView *DSAFindListByTree(void) {
 #ifdef DSA_SELFTEST
         DSAInstallSelfTest();
 #endif
-        // 悬浮入口：等首帧窗口就绪后挂上，之后每次布局都会保活
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{ DSAEnsureFloatingEntry(); });
+        // 悬浮入口：不依赖任何 hook，启动后分几次重试挂上（幂等）
+        for (double d = 1.5; d <= 9.0; d += 2.5) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(d * NSEC_PER_SEC)),
+                           dispatch_get_main_queue(), ^{
+                NSLog(@"[DSAgent] floating attempt @%.1fs", d);
+                DSAEnsureFloatingEntry();
+            });
+        }
         NSLog(@"[DSAgent] loaded");
     }
 }

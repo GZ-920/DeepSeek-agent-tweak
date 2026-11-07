@@ -79,8 +79,8 @@ static UIView *DSAMakeEntryBar(void) {
 static void DSAInstallFloatingEntry(void) {
     if (DSAFloatingDisabled()) return;
     UIWindow *w = DSAKeyWindow();
-    if (!w) return;
-    if (objc_getAssociatedObject(w, &kDSAFloatingTag)) return;
+    if (!w) { NSLog(@"[DSAgent] floating: no key window"); return; }
+    if (objc_getAssociatedObject(w, &kDSAFloatingTag)) { NSLog(@"[DSAgent] floating: already there"); return; }
     if (dispatching) return;
 
     UIButton *pill = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -103,7 +103,15 @@ static void DSAInstallFloatingEntry(void) {
     pill.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleBottomMargin;
     [w addSubview:pill];
     objc_setAssociatedObject(w, &kDSAFloatingTag, pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    NSLog(@"[DSAgent] floating entry at %@", NSStringFromCGRect(pill.frame));
+    NSLog(@"[DSAgent] floating entry at %@ window=%@", NSStringFromCGRect(pill.frame),
+          NSStringFromClass([w class]));
+    @try {
+        NSString *dir = NSSearchPathForDirectoriesInDomains(NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
+        [[NSString stringWithFormat:@"floating ok %@ %@ %@\n", [NSDate date],
+          NSStringFromCGRect(pill.frame), NSStringFromClass([w class])]
+            writeToFile:[dir stringByAppendingPathComponent:@"DSAgent_float.txt"] atomically:YES
+               encoding:NSUTF8StringEncoding error:nil];
+    } @catch (__unused NSException *e) {}
 }
 
 #pragma mark - 对外
