@@ -118,10 +118,12 @@ static UIView *DSAFindNativeSidebar(UIWindow *w) {
         if (!v.window || v.hidden || v.alpha < 0.05) continue;
         NSString *c = NSStringFromClass([v class]);
         if (![c containsString:@"Sidebar"]) continue;
-        // 抽屉：宽度小于屏宽 0.9
-        if (v.bounds.size.width > 0 && v.bounds.size.width < w.bounds.size.width * 0.9) {
-            if (!best || v.bounds.size.width > best.bounds.size.width) best = v;
-        }
+        if (v.bounds.size.width <= 0 || v.bounds.size.width >= w.bounds.size.width * 0.9) continue;
+        // 必须真的露在屏幕内（收起状态的抽屉 x 是负数，在屏幕外）
+        CGRect r = [v convertRect:v.bounds toView:nil];
+        if (r.origin.x < -v.bounds.size.width * 0.5) continue;   // 大半在屏幕外 = 收起
+        if (r.origin.x + r.size.width <= 0) continue;
+        if (!best || v.bounds.size.width > best.bounds.size.width) best = v;
     }
     return best;
 }
@@ -131,34 +133,34 @@ static UIView *DSAFindNativeSidebar(UIWindow *w) {
 static BOOL DSAInsertSection(UIView *sidebar) {
     if (objc_getAssociatedObject(sidebar, &kDSASidebarSectionTag)) return YES;
 
-    // 找侧边栏里的搜索框（或第一个列表）作为锚点
+    // 找锚点：搜索框 → SessionList 类 → 滚动视图 → 最大的内容视图
     UIView *anchor = nil;
+    NSMutableString *dump = [NSMutableString string];
     NSMutableArray *stack = [NSMutableArray arrayWithObject:sidebar];
     int guard = 0;
-    while (stack.count && guard++ < 3000) {
+    NSMutableArray<UIView *> *cands = [NSMutableArray array];
+    while (stack.count && guard++ < 4000) {
         UIView *v = stack.lastObject;
         [stack removeLastObject];
-        for (UIView *s in v.subviews) [stack addObject:s];
+        for (UIView *s2 in v.subviews) [stack addObject:s2];
         if (!v.window) continue;
         NSString *c = NSStringFromClass([v class]);
-        if ([c containsString:@"Search"]) { anchor = v; break; }
+        [dump appendFormat:@"\n    %@ %.0fx%.0f", c, v.bounds.size.width, v.bounds.size.height];
+        if ([c containsString:@"Search"] || [c containsString:@"SessionList"] ||
+            [v isKindOfClass:[UIScrollView class]]) [cands addObject:v];
     }
-    if (!anchor) {
-        // 没有搜索框 → 用侧边栏里第一个 UITableView / UICollectionView
-        stack = [NSMutableArray arrayWithObject:sidebar];
-        guard = 0;
-        while (stack.count && guard++ < 3000) {
-            UIView *v = stack.lastObject;
-            [stack removeLastObject];
-            for (UIView *s in v.subviews) [stack addObject:s];
-            if (!v.window) continue;
-            if ([v isKindOfClass:[UITableView class]] || [v isKindOfClass:[UICollectionView class]]) {
-                anchor = v; break;
-            }
+    // 优先级：Search > SessionList > 滚动视图
+    for (NSString *key in @[ @"Search", @"SessionList" ]) {
+        for (UIView *c in cands) {
+            if ([NSStringFromClass([c class]) containsString:key]) { anchor = c; break; }
         }
+        if (anchor) break;
     }
     if (!anchor) {
-        DSADiagLog(@"[SIDEBAR] no anchor (search/list) found");
+        for (UIView *c in cands) { if ([c isKindOfClass:[UIScrollView class]]) { anchor = c; break; } }
+    }
+    if (!anchor) {
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] no anchor in %@", dump]);
         return NO;
     }
 
