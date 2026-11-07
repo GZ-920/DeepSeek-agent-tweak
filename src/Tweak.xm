@@ -60,9 +60,8 @@ static UIView *DSAFindListByTree(void) {
 
 - (void)viewDidLayoutSubviews {
     %orig;
-    // 这里只做「找列表 → 插 header」，不再调用悬浮入口（高频路径，容易崩）
-    UIView *list = DSAFindListByKey(self);
-    if (list) DSAEnsureEntry(list);
+    // 诊断阶段：先不插表格 header，专注确认悬浮胶囊能否显示
+    (void)self;
 }
 
 - (void)viewDidAppear:(BOOL)animated {

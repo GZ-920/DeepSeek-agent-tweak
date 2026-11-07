@@ -83,7 +83,7 @@ static UIView *DSAMakeEntryBar(void) {
 
 #pragma mark - B. 悬浮胶囊
 
-/// 悬浮胶囊：不用 UIButton（App 可能全局改了 UIButton 的样式），改用 UIControl + UILabel 自绘
+/// 悬浮胶囊：先复刻「探针已验证可见」的画法（蓝底圆角 + 白字 UILabel），再放最上层
 static void DSAInstallFloatingEntry(void) {
     if (DSAFloatingDisabled()) return;
     UIWindow *w = DSAKeyWindow();
@@ -91,32 +91,23 @@ static void DSAInstallFloatingEntry(void) {
     if (objc_getAssociatedObject(w, &kDSAFloatingTag)) return;
     if (dispatching) return;
 
-    UIControl *pill = [[UIControl alloc] initWithFrame:CGRectZero];
-    pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:0.95];
+    // 和探针完全一致：UIControl(76x34) + 背景 + 圆角 + UILabel 子视图
+    CGRect f = CGRectMake(w.bounds.size.width - 84, 200, 76, 34);
+    UIControl *pill = [[UIControl alloc] initWithFrame:f];
+    pill.backgroundColor = [UIColor colorWithRed:0.29 green:0.48 blue:1.0 alpha:1.0];
     pill.layer.cornerRadius = 17;
     pill.clipsToBounds = YES;
-    pill.userInteractionEnabled = YES;
     [pill addTarget:[DSAEntryProxy class] action:@selector(tapped) forControlEvents:UIControlEventTouchUpInside];
 
-    UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
+    UILabel *lab = [[UILabel alloc] initWithFrame:pill.bounds];
     lab.text = @"智能体";
     lab.font = [UIFont boldSystemFontOfSize:13];
-    lab.textColor = [UIColor whiteColor];
+    lab.textColor = UIColor.whiteColor;
     lab.textAlignment = NSTextAlignmentCenter;
-    lab.userInteractionEnabled = NO;
     lab.backgroundColor = [UIColor clearColor];
+    lab.userInteractionEnabled = NO;
     [pill addSubview:lab];
 
-    CGSize size = CGSizeMake(76, 34);
-    CGFloat safeTop = 0;
-    if (@available(iOS 11.0, *)) safeTop = w.safeAreaInsets.top;
-    if (safeTop <= 0) safeTop = 44;
-    pill.frame = CGRectMake(w.bounds.size.width - size.width - 10, safeTop + 8,
-                            size.width, size.height);
-    lab.frame = pill.bounds;
-    pill.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin | UIViewAutoresizingFlexibleBottomMargin;
-    lab.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    // 放到最上层，避免被后加的视图盖住
     [w addSubview:pill];
     [w bringSubviewToFront:pill];
     objc_setAssociatedObject(w, &kDSAFloatingTag, pill, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
