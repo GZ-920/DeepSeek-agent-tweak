@@ -44,6 +44,43 @@ void DSAProbeWindows(void) {
     }
 }
 
+/// 对照探针：同一位置三种画法，判断到底哪一步让视图消失
+///   A 纯 UIView + 背景（已知可见）
+///   B UIView + 背景 + label 子视图
+///   C UIControl + 背景 + 圆角（已知不显示）
+///   D UIView + 背景 + 圆角（判断是不是圆角/裁剪的锅）
+void DSAProbeVariants(void) {
+    @try {
+        UIWindow *w = DSAKeyWindow();
+        if (!w) return;
+        CGFloat baseY = 200;
+        NSArray *colors = @[ [UIColor greenColor],
+                             [UIColor orangeColor],
+                             [UIColor purpleColor],
+                             [UIColor blueColor] ];
+        for (int i = 0; i < 4; i++) {
+            CGRect f = CGRectMake(8 + i * 84, baseY, 76, 34);
+            UIView *v;
+            if (i == 2) v = [[UIControl alloc] initWithFrame:f];
+            else v = [[UIView alloc] initWithFrame:f];
+            v.backgroundColor = colors[i];
+            if (i == 3) { v.layer.cornerRadius = 17; v.clipsToBounds = YES; }
+            if (i == 1) {
+                UILabel *l = [[UILabel alloc] initWithFrame:v.bounds];
+                l.text = @"字";
+                l.textColor = UIColor.whiteColor;
+                l.textAlignment = NSTextAlignmentCenter;
+                l.font = [UIFont boldSystemFontOfSize:13];
+                [v addSubview:l];
+            }
+            [w addSubview:v];
+        }
+        NSLog(@"[DSAgent] variants added");
+    } @catch (__unused NSException *e) {
+        NSLog(@"[DSAgent] variants failed %@", e.reason);
+    }
+}
+
 /// 最原始的探针：不依赖约束/阴影/圆角，只在窗口原点画一个绿方块
 void DSAProbeSquare(void) {
     @try {

@@ -128,6 +128,7 @@ static UIView *DSAFindListByTree(void) {
                 NSLog(@"[DSAgent] floating attempt @%.1fs", d);
                 DSAProbeWindows();
                 DSAProbeSquare();
+                if (d < 5.0) DSAProbeVariants();
                 DSAEnsureFloatingEntry();
             });
         }

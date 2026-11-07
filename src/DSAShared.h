@@ -32,6 +32,7 @@ void DSAForceShowAgents(void);
 // Probe.m
 void DSAProbeWindows(void);
 void DSAProbeSquare(void);
+void DSAProbeVariants(void);
 
 #ifdef __cplusplus
 }
