@@ -242,7 +242,7 @@ static BOOL DSALooksLikeOpenDrawer(UIView *v, UIWindow *w) {
     return YES;
 }
 
-UIView *DSAFindNativeSidebar(UIWindow *w) {
+static UIView *DSAFindNativeSidebar(UIWindow *w) {
     if (!w) return nil;
     NSMutableArray *stack = [NSMutableArray arrayWithObject:w];
     int guard = 0;
