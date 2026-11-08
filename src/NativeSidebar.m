@@ -12,6 +12,9 @@
 #import "AgentStore.h"
 
 static char kDSASidebarSectionTag;
+static CGFloat sSectionTop = -1;      // ★ 区块 top 只算一次（避免追逐会移动的搜索框）
+static CGFloat sMaxPushed = 0;        // 已推送总量（防失控）
+static BOOL sPushBlocked = NO;        // 校正失败后永久停止推送
 
 @interface DSAEntryProxy : NSObject
 + (void)tapped;
@@ -21,14 +24,18 @@ void DSADiagLog(NSString *line);
 static UIView *DSAFindNativeSidebar(UIWindow *w);   // 前置声明（定义在文件末尾）
 
 /// 取侧边栏真实背景色：先看 backgroundColor 是否不透明，否则渲染后采样像素
+static int DSAMedian5(int *arr) {
+    for (int a = 0; a < 4; a++)
+        for (int b = a + 1; b < 5; b++)
+            if (arr[b] < arr[a]) { int t = arr[a]; arr[a] = arr[b]; arr[b] = t; }
+    return arr[2];
+}
+
 static UIColor *DSASampleBackground(UIView *sidebar) {
     UIColor *c = sidebar.backgroundColor;
     if (c) {
         CGFloat a = 1;
-        if (![c getRed:NULL green:NULL blue:NULL alpha:&a]) {
-            // 灰度/白等色彩空间
-            CGFloat w = 0; [c getWhite:&w alpha:&a];
-        }
+        if (![c getRed:NULL green:NULL blue:NULL alpha:&a]) { CGFloat w = 0; [c getWhite:&w alpha:&a]; }
         if (a >= 0.9) return c;
     }
     @try {
@@ -40,24 +47,29 @@ static UIColor *DSASampleBackground(UIView *sidebar) {
         }];
         CGImageRef cg = img.CGImage;
         if (!cg) return [UIColor systemGroupedBackgroundColor];
-        unsigned char px[4] = {0, 0, 0, 0};
-        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-        CGContextRef cc = CGBitmapContextCreate(px, 1, 1, 8, 4, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
-        CGColorSpaceRelease(cs);
-        if (!cc) return [UIColor systemGroupedBackgroundColor];
-        // 左下角（通常是空白背景）；CGBitmapContext 坐标系上下颠倒，y=0 对应图像底部
-        CGContextDrawImage(cc, CGRectMake(0, 0, 1, 1), cg);
-        CGContextRelease(cc);
-        UIColor *out = [UIColor colorWithRed:px[0] / 255.0 green:px[1] / 255.0 blue:px[2] / 255.0 alpha:1];
-        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sampled bg rgb(%d,%d,%d)",
-                     px[0], px[1], px[2]]);
-        return out;
+
+        // 沿最左缘取 5 个点（x=1），按通道取中位数 → 避开采到文字
+        int rs[5], gs[5], bs[5];
+        for (int i = 0; i < 5; i++) {
+            unsigned char px[4] = {0, 0, 0, 0};
+            CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+            CGContextRef cc = CGBitmapContextCreate(px, 1, 1, 8, 4, cs,
+                                                    (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+            CGColorSpaceRelease(cs);
+            if (!cc) return [UIColor systemGroupedBackgroundColor];
+            // CGBitmapContext y 轴向上：y=0 对应图像底边
+            CGFloat yy = (i + 0.5) / 5.0;
+            CGContextDrawImage(cc, CGRectMake(1, yy, 1, 1), cg);
+            CGContextRelease(cc);
+            rs[i] = px[0]; gs[i] = px[1]; bs[i] = px[2];
+        }
+        int R = DSAMedian5(rs), G = DSAMedian5(gs), B = DSAMedian5(bs);
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sampled bg rgb(%d,%d,%d)", R, G, B]);
+        return [UIColor colorWithRed:R / 255.0 green:G / 255.0 blue:B / 255.0 alpha:1];
     } @catch (__unused NSException *e) {
         return [UIColor systemGroupedBackgroundColor];
     }
 }
-BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFont);
-UIView *DSAFindSessionListView(void);
 
 #pragma mark - 区块内容
 
@@ -187,11 +199,11 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         [host insertSubview:sec aboveSubview:list];   // 每次都重新压到列表之上
     }
 
-    // 定位：贴列表顶部；但若搜索框在同一 host 内，要放到搜索框下沿（别盖住它）
+    // ★ 定位只算一次：之后沿用。否则搜索框被推送拖走 → 目标跟着变 → 无限追（实测 listTop 一路涨到 2093）
     CGRect lr = [list convertRect:list.bounds toView:host];
-    CGFloat top = lr.origin.y;
     CGFloat width = lr.size.width;
-    {
+    if (sSectionTop < 0) {
+        CGFloat top0 = lr.origin.y;
         NSMutableArray *st = [NSMutableArray arrayWithObject:host];
         int g2 = 0;
         while (st.count && g2++ < 2000) {
@@ -201,11 +213,14 @@ static BOOL DSAInsertSection(UIView *sidebar) {
             if ([NSStringFromClass([v class]) containsString:@"SearchBar"] && v.bounds.size.width > 100) {
                 CGRect r = [v convertRect:v.bounds toView:host];
                 CGFloat sb = r.origin.y + r.size.height + 4;
-                if (sb > top) top = sb;
+                if (sb > top0) top0 = sb;
                 break;
             }
         }
+        sSectionTop = top0;
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section top locked at %.0f", sSectionTop]);
     }
+    CGFloat top = sSectionTop;
 
     CGFloat h = [sec systemLayoutSizeFittingSize:CGSizeMake(width, 0)
                   withHorizontalFittingPriority:UILayoutPriorityRequired
@@ -232,51 +247,70 @@ static BOOL DSAInsertSection(UIView *sidebar) {
                      NSStringFromClass([host class])]);
     }
 
-    // ★ 腾出空间：把列表下推到区块下方（否则顶部对话被遮住）
+    // ★ 腾出空间：一次性推到位；带防失控（上限 + 搜索框校正失败即回滚并停手）
     CGFloat wantListTop = top + h + 4;
     CGFloat listTopNow = [list convertRect:list.bounds toView:host].origin.y;
-    if (wantListTop - listTopNow > 1) {
-        // 记录搜索框原位置，推送后反向修正
+    CGFloat need = wantListTop - listTopNow;
+    if (need > 1 && !sPushBlocked && sMaxPushed < 700) {
+        // 找搜索框（全局），推送前记位置
         UIView *sb = nil;
-        NSMutableArray *st = [NSMutableArray arrayWithObject:host];
+        UIWindow *win = host.window ?: DSAKeyWindow();
+        NSMutableArray *st = [NSMutableArray arrayWithObject:(UIView *)win];
         int g2 = 0;
-        while (st.count && g2++ < 2000) {
+        while (st.count && g2++ < 3000) {
             UIView *v = st.lastObject; [st removeLastObject];
             for (UIView *s2 in v.subviews) [st addObject:s2];
             if (!v.window) continue;
             if ([NSStringFromClass([v class]) containsString:@"SearchBar"] && v.bounds.size.width > 100) { sb = v; break; }
         }
-        CGFloat sbBefore = sb ? [sb convertRect:sb.bounds toView:host].origin.y : -1;
+        CGFloat sbBefore = sb ? [sb convertRect:sb.bounds toView:win].origin.y : -1;
+        CGFloat c0list = 0;
+        NSLayoutConstraint *listC = nil;
+        for (NSLayoutConstraint *c in host.constraints) {
+            if (c.firstItem == list && c.firstAttribute == NSLayoutAttributeTop &&
+                c.relation == NSLayoutRelationEqual) { listC = c; break; }
+        }
+        if (listC) c0list = listC.constant;
 
-        if (DSAPushListToTotal(list, host, wantListTop - listTopNow, nil)) {
+        if (DSAPushListToTotal(list, host, MIN(need, 700 - sMaxPushed), nil)) {
+            sMaxPushed += MIN(need, 700 - sMaxPushed);
             [host layoutIfNeeded];
-            // 搜索框若被带跑，反向修正它的顶部约束
+            BOOL ok = YES;
             if (sb && sbBefore >= 0) {
-                CGFloat sbAfter = [sb convertRect:sb.bounds toView:host].origin.y;
-                CGFloat delta = sbAfter - sbBefore;
-                if (fabs(delta) > 1) {
+                CGFloat sbAfter = [sb convertRect:sb.bounds toView:win].origin.y;
+                CGFloat d = sbAfter - sbBefore;
+                if (fabs(d) > 1) {
+                    // 沿搜索框的祖先链找它的 top 等式约束
                     NSLayoutConstraint *sc = nil;
-                    NSArray *owners = @[ sb.superview ?: (id)[NSNull null], host ];
-                    for (id o in owners) {
-                        if (![o isKindOfClass:[UIView class]]) continue;
-                        for (NSLayoutConstraint *c in ((UIView *)o).constraints) {
+                    UIView *p = sb;
+                    for (int i = 0; i < 5 && p; i++, p = p.superview) {
+                        for (NSLayoutConstraint *c in p.constraints) {
                             if (c.firstItem == sb && c.firstAttribute == NSLayoutAttributeTop &&
                                 c.relation == NSLayoutRelationEqual) { sc = c; break; }
                         }
                         if (sc) break;
                     }
                     if (sc) {
-                        sc.constant -= delta;
+                        sc.constant -= d;
                         [host layoutIfNeeded];
-                        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] search bar corrected by %.0f", -delta]);
+                        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] search corrected by %.0f", -d]);
                     } else {
-                        DSADiagLog(@"[SIDEBAR] no search top constraint to correct");
+                        ok = NO;
+                        DSADiagLog(@"[SIDEBAR] cannot correct search bar → rollback + stop pushing");
                     }
                 }
             }
-            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] reserved space: listTop %.0f -> %.0f",
-                         listTopNow, [list convertRect:list.bounds toView:host].origin.y]);
+            if (!ok) {
+                if (listC) { listC.constant = c0list; [host layoutIfNeeded]; }
+                sPushBlocked = YES;
+                sMaxPushed = 0;
+            } else {
+                DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] reserved listTop %.0f -> %.0f (total pushed %.0f)",
+                             listTopNow, [list convertRect:list.bounds toView:host].origin.y, sMaxPushed]);
+            }
         }
+    } else if (sPushBlocked) {
+        // 已停手
     }
 
     if (fresh) DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section inserted above list (host %@) at y=%.0f h=%.0f",
@@ -304,6 +338,9 @@ void DSARefreshNativeSidebar(void) {
         if (sec) {
             [sec removeFromSuperview];
             if (sec.superview) objc_setAssociatedObject(sec.superview, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            sSectionTop = -1;
+            sMaxPushed = 0;
+            sPushBlocked = NO;
             DSADiagLog(@"[SIDEBAR] section cleared for rebuild");
         }
         // 不再改 contentInset，无需还原
