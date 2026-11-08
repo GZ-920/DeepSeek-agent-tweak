@@ -14,6 +14,8 @@
 static char kDSASidebarSectionTag;
 static char kDSATopConstraintTag;
 static CGFloat sSectionTop = -1;      // ★ 区块 top 只算一次（避免追逐会移动的搜索框）
+static CGFloat sSearchTop0 = -1;      // 搜索框原始 top（推送后强制按回）
+static CGFloat sSearchH0 = -1;        // 搜索框原始 height
 static CGFloat sMaxPushed = 0;        // 已推送总量（防失控）
 static BOOL sPushBlocked = NO;        // 校正失败后永久停止推送
 
@@ -289,6 +291,12 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         UIView *sb = DSAFindSearchBarView();          // ★ 用导出的查找器（带缓存，节流 2s）
         UIWindow *win = host.window ?: DSAKeyWindow();
         CGFloat sbBefore = sb ? [sb convertRect:sb.bounds toView:win].origin.y : -1;
+        if (sb && sSearchTop0 < 0) {
+            sSearchTop0 = sbBefore;
+            sSearchH0 = sb.bounds.size.height;
+            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] search baseline top=%.0f h=%.0f",
+                         sSearchTop0, sSearchH0]);
+        }
         CGFloat c0list = 0;
         NSLayoutConstraint *listC = nil;
         for (NSLayoutConstraint *c in host.constraints) {
@@ -300,29 +308,53 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         if (DSAPushListToTotal(list, host, MIN(need, 700 - sMaxPushed), nil)) {
             sMaxPushed += MIN(need, 700 - sMaxPushed);
             [host layoutIfNeeded];
+            // ★ 搜索框底边被钉在列表顶边 → 推列表必然拉伸它。推完把 top/height 按回原值。
             BOOL ok = YES;
-            if (sb && sbBefore >= 0) {
-                CGFloat sbAfter = [sb convertRect:sb.bounds toView:win].origin.y;
-                CGFloat d = sbAfter - sbBefore;
-                if (fabs(d) > 1) {
-                    // 沿搜索框的祖先链找它的 top 等式约束
-                    NSLayoutConstraint *sc = nil;
-                    UIView *p = sb;
-                    for (int i = 0; i < 5 && p; i++, p = p.superview) {
-                        for (NSLayoutConstraint *c in p.constraints) {
-                            if (c.firstItem == sb && c.firstAttribute == NSLayoutAttributeTop &&
-                                c.relation == NSLayoutRelationEqual) { sc = c; break; }
+            if (sb && sSearchTop0 >= 0 && sSearchH0 > 0) {
+                [win layoutIfNeeded];
+                CGFloat curTop = [sb convertRect:sb.bounds toView:win].origin.y;
+                CGFloat curH = sb.bounds.size.height;
+                CGFloat needTop = sSearchTop0 - curTop;
+                CGFloat needH = sSearchH0 - curH;
+                if (fabs(needTop) > 1 || fabs(needH) > 1) {
+                    NSArray *owners = @[ sb.superview ?: (id)[NSNull null], host, sb ];
+                    int fixed = 0;
+                    // 修 top
+                    if (fabs(needTop) > 1) {
+                        for (id o in owners) {
+                            if (![o isKindOfClass:[UIView class]]) continue;
+                            for (NSLayoutConstraint *c in ((UIView *)o).constraints) {
+                                if (c.firstItem == sb && c.firstAttribute == NSLayoutAttributeTop &&
+                                    c.relation == NSLayoutRelationEqual) { c.constant += needTop; fixed = 1; break; }
+                            }
+                            if (fixed) break;
                         }
-                        if (sc) break;
                     }
-                    if (sc) {
-                        sc.constant -= d;
-                        [host layoutIfNeeded];
-                        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] search corrected by %.0f", -d]);
-                    } else {
-                        ok = NO;
-                        DSADiagLog(@"[SIDEBAR] cannot correct search bar → rollback + stop pushing");
+                    // 修 height
+                    if (fabs(needH) > 1) {
+                        int hf = 0;
+                        for (id o in owners) {
+                            if (![o isKindOfClass:[UIView class]]) continue;
+                            for (NSLayoutConstraint *c in ((UIView *)o).constraints) {
+                                if (c.firstItem == sb && c.firstAttribute == NSLayoutAttributeHeight &&
+                                    c.relation == NSLayoutRelationEqual) { c.constant += needH; hf = 1; break; }
+                            }
+                            if (hf) break;
+                        }
+                        if (!hf) {
+                            @try {
+                                NSLayoutConstraint *hc = [sb.heightAnchor constraintEqualToConstant:sSearchH0];
+                                hc.active = YES;
+                                fixed = 1;
+                            } @catch (__unused NSException *e) { fixed = 0; }
+                        } else fixed = 1;
                     }
+                    [win layoutIfNeeded];
+                    CGFloat afterTop = [sb convertRect:sb.bounds toView:win].origin.y;
+                    CGFloat afterH = sb.bounds.size.height;
+                    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] search fix top %.0f->%.0f h %.0f->%.0f (fixed=%d)",
+                                 curTop, afterTop, curH, afterH, fixed]);
+                    if (fabs(afterTop - sSearchTop0) > 2 || fabs(afterH - sSearchH0) > 2) ok = NO;
                 }
             }
             if (!ok) {
