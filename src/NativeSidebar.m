@@ -19,6 +19,43 @@ static char kDSASidebarSectionTag;
 
 void DSADiagLog(NSString *line);
 static UIView *DSAFindNativeSidebar(UIWindow *w);   // 前置声明（定义在文件末尾）
+
+/// 取侧边栏真实背景色：先看 backgroundColor 是否不透明，否则渲染后采样像素
+static UIColor *DSASampleBackground(UIView *sidebar) {
+    UIColor *c = sidebar.backgroundColor;
+    if (c) {
+        CGFloat a = 1;
+        if (![c getRed:NULL green:NULL blue:NULL alpha:&a]) {
+            // 灰度/白等色彩空间
+            CGFloat w = 0; [c getWhite:&w alpha:&a];
+        }
+        if (a >= 0.9) return c;
+    }
+    @try {
+        CGSize sz = sidebar.bounds.size;
+        if (sz.width < 4 || sz.height < 4) return [UIColor systemGroupedBackgroundColor];
+        UIGraphicsImageRenderer *rend = [[UIGraphicsImageRenderer alloc] initWithSize:sz];
+        UIImage *img = [rend imageWithActions:^(UIGraphicsImageRendererContext *rc) {
+            [sidebar drawViewHierarchyInRect:CGRectMake(0, 0, sz.width, sz.height) afterScreenUpdates:NO];
+        }];
+        CGImageRef cg = img.CGImage;
+        if (!cg) return [UIColor systemGroupedBackgroundColor];
+        unsigned char px[4] = {0, 0, 0, 0};
+        CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+        CGContextRef cc = CGBitmapContextCreate(px, 1, 1, 8, 4, cs, kCGImageAlphaPremultipliedLast);
+        CGColorSpaceRelease(cs);
+        if (!cc) return [UIColor systemGroupedBackgroundColor];
+        // 左下角（通常是空白背景）；CGBitmapContext 坐标系上下颠倒，y=0 对应图像底部
+        CGContextDrawImage(cc, CGRectMake(0, 0, 1, 1), cg);
+        CGContextRelease(cc);
+        UIColor *out = [UIColor colorWithRed:px[0] / 255.0 green:px[1] / 255.0 blue:px[2] / 255.0 alpha:1];
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sampled bg rgb(%d,%d,%d)",
+                     px[0], px[1], px[2]]);
+        return out;
+    } @catch (__unused NSException *e) {
+        return [UIColor systemGroupedBackgroundColor];
+    }
+}
 BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFont);
 UIView *DSAFindSessionListView(void);
 
@@ -177,14 +214,7 @@ static BOOL DSAInsertSection(UIView *sidebar) {
 
     sec.frame = CGRectMake(lr.origin.x, top, width, h);
     // ★ clearColor 也是「非 nil」，?: 兜底会失效 → 必须显式判断透明度
-    UIColor *bg = sidebar.backgroundColor;
-    CGFloat alpha = 1;
-    if (bg) {
-        CGFloat r = 0, g = 0, b = 0;
-        if (![bg getRed:&r green:&g blue:&b alpha:&alpha]) alpha = 1;   // 灰度色系取不到就当不透明
-    }
-    if (!bg || alpha < 0.9) bg = [UIColor systemGroupedBackgroundColor];
-    sec.backgroundColor = bg;
+    sec.backgroundColor = DSASampleBackground(sidebar);
     sec.opaque = YES;
     sec.clipsToBounds = YES;
     sec.layer.zPosition = 10000;
@@ -200,6 +230,53 @@ static BOOL DSAInsertSection(UIView *sidebar) {
                      NSStringFromCGRect(sec.frame),
                      hit ? NSStringFromClass([hit class]) : @"nil",
                      NSStringFromClass([host class])]);
+    }
+
+    // ★ 腾出空间：把列表下推到区块下方（否则顶部对话被遮住）
+    CGFloat wantListTop = top + h + 4;
+    CGFloat listTopNow = [list convertRect:list.bounds toView:host].origin.y;
+    if (wantListTop - listTopNow > 1) {
+        // 记录搜索框原位置，推送后反向修正
+        UIView *sb = nil;
+        NSMutableArray *st = [NSMutableArray arrayWithObject:host];
+        int g2 = 0;
+        while (st.count && g2++ < 2000) {
+            UIView *v = st.lastObject; [st removeLastObject];
+            for (UIView *s2 in v.subviews) [st addObject:s2];
+            if (!v.window) continue;
+            if ([NSStringFromClass([v class]) containsString:@"SearchBar"] && v.bounds.size.width > 100) { sb = v; break; }
+        }
+        CGFloat sbBefore = sb ? [sb convertRect:sb.bounds toView:host].origin.y : -1;
+
+        if (DSAPushListToTotal(list, host, wantListTop - listTopNow, nil)) {
+            [host layoutIfNeeded];
+            // 搜索框若被带跑，反向修正它的顶部约束
+            if (sb && sbBefore >= 0) {
+                CGFloat sbAfter = [sb convertRect:sb.bounds toView:host].origin.y;
+                CGFloat delta = sbAfter - sbBefore;
+                if (fabs(delta) > 1) {
+                    NSLayoutConstraint *sc = nil;
+                    NSArray *owners = @[ sb.superview ?: (id)[NSNull null], host ];
+                    for (id o in owners) {
+                        if (![o isKindOfClass:[UIView class]]) continue;
+                        for (NSLayoutConstraint *c in ((UIView *)o).constraints) {
+                            if (c.firstItem == sb && c.firstAttribute == NSLayoutAttributeTop &&
+                                c.relation == NSLayoutRelationEqual) { sc = c; break; }
+                        }
+                        if (sc) break;
+                    }
+                    if (sc) {
+                        sc.constant -= delta;
+                        [host layoutIfNeeded];
+                        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] search bar corrected by %.0f", -delta]);
+                    } else {
+                        DSADiagLog(@"[SIDEBAR] no search top constraint to correct");
+                    }
+                }
+            }
+            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] reserved space: listTop %.0f -> %.0f",
+                         listTopNow, [list convertRect:list.bounds toView:host].origin.y]);
+        }
     }
 
     if (fresh) DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section inserted above list (host %@) at y=%.0f h=%.0f",
