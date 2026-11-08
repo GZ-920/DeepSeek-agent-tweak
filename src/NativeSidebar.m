@@ -150,10 +150,25 @@ static BOOL DSAInsertSection(UIView *sidebar) {
         [host insertSubview:sec aboveSubview:list];   // 每次都重新压到列表之上
     }
 
-    // 定位：贴着列表顶部（host 坐标系）
+    // 定位：贴列表顶部；但若搜索框在同一 host 内，要放到搜索框下沿（别盖住它）
     CGRect lr = [list convertRect:list.bounds toView:host];
     CGFloat top = lr.origin.y;
     CGFloat width = lr.size.width;
+    {
+        NSMutableArray *st = [NSMutableArray arrayWithObject:host];
+        int g2 = 0;
+        while (st.count && g2++ < 2000) {
+            UIView *v = st.lastObject; [st removeLastObject];
+            for (UIView *s2 in v.subviews) [st addObject:s2];
+            if (!v.window) continue;
+            if ([NSStringFromClass([v class]) containsString:@"SearchBar"] && v.bounds.size.width > 100) {
+                CGRect r = [v convertRect:v.bounds toView:host];
+                CGFloat sb = r.origin.y + r.size.height + 4;
+                if (sb > top) top = sb;
+                break;
+            }
+        }
+    }
 
     CGFloat h = [sec systemLayoutSizeFittingSize:CGSizeMake(width, 0)
                   withHorizontalFittingPriority:UILayoutPriorityRequired
@@ -161,8 +176,17 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     if (h < 40) h = 200;
 
     sec.frame = CGRectMake(lr.origin.x, top, width, h);
-    sec.backgroundColor = sidebar.backgroundColor ?: [UIColor systemGroupedBackgroundColor];
+    // ★ clearColor 也是「非 nil」，?: 兜底会失效 → 必须显式判断透明度
+    UIColor *bg = sidebar.backgroundColor;
+    CGFloat alpha = 1;
+    if (bg) {
+        CGFloat r = 0, g = 0, b = 0;
+        if (![bg getRed:&r green:&g blue:&b alpha:&alpha]) alpha = 1;   // 灰度色系取不到就当不透明
+    }
+    if (!bg || alpha < 0.9) bg = [UIColor systemGroupedBackgroundColor];
+    sec.backgroundColor = bg;
     sec.opaque = YES;
+    sec.clipsToBounds = YES;
     sec.layer.zPosition = 10000;
     [host bringSubviewToFront:sec];
 
