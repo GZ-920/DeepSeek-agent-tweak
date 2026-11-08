@@ -82,5 +82,5 @@ void DSADiagLog(NSString *line) {
 
 /// 启动时写版本标记（判断手机上跑的是哪一版）
 void DSALogVersion(void) {
-    DSADiagLog(@"[VERSION] v0.1.39");
+    DSADiagLog(@"[VERSION] v0.1.40");
 }

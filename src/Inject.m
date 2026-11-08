@@ -18,8 +18,8 @@ void DSADiagLog(NSString *line);
 // —— 发送尝试状态：0=未开始, >0=已尝试次数, -1=已完成（不再动）——
 static int DSASendTries = 0;
 static const int kDSAMaxTries = 3;
-static BOOL DSARoundActive = NO;
-static NSString *DSALastAgentId = nil;   // 本轮使用的智能体（用于发送成功后绑定会话）    // 本轮是否已填过（只认本次运行内填的，避免重启后残留状态误发）
+static NSString *DSALastAgentId = nil;   // 本轮使用的智能体（发送成功后据此绑定会话）
+static BOOL DSARoundActive = NO;        // 本轮是否已填过（只认本次运行内填的，避免重启残留误发）
 
 // —— 最早允许填充的时间戳（点完新建对话要等新会话打开）——
 static NSTimeInterval DSAFillNotBefore = 0;
@@ -203,6 +203,7 @@ static void DSABindCurrentSession(void) {
         DSADiagLog([NSString stringWithFormat:@"[BIND] sid=%@ agent=%@ title=%@",
                      sid, agentId, title ?: @"(none)"]);
         DSALastAgentId = nil;
+        DSARefreshNativeSidebar();      // ★ 立即刷新，智能体对话才会出现
     } @catch (__unused NSException *e) {
         DSADiagLog([NSString stringWithFormat:@"[BIND] exception %@", e.reason]);
     }
