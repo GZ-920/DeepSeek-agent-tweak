@@ -118,15 +118,15 @@ static UIView *DSAFindListByTree(void) {
                 DSAProbeVariants();
             });
         }
-        // 注入轮询：不依赖 hook，用 NSTimer（避免 block 自引用 retain cycle）
+        // 注入链路要快（0.2s），UI 插入慢一点（1s）——两个定时器
         dispatch_async(dispatch_get_main_queue(), ^{
-            NSTimer *t = [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
-                                                          block:^(NSTimer *timer) {
-                DSAInjectTick();        // 提示词注入
-                DSAEnsureNativeEntry();     // 原生列表入口
-                DSAEnsureNativeSidebar();  // 原生侧边栏区块
+            [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES
+                                           block:^(NSTimer *timer) { DSAInjectTick(); }];
+            [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
+                                           block:^(NSTimer *timer) {
+                DSAEnsureNativeEntry();
+                DSAEnsureNativeSidebar();
             }];
-            (void)t;
         });
         NSLog(@"[DSAgent] loaded");
     }

@@ -111,14 +111,14 @@ static void DSABackToRoot(void) {
 void DSAOpenNewChatWithAgent(DSAAgent *agent) {
     if (!agent) return;
     DSAResetInjection();
-    DSASetFillDelay(1.5);      // 等新建对话的会话打开后再填
+    DSASetFillDelay(0.5);      // 等新建对话的会话打开后再填
     DSADiagLog([NSString stringWithFormat:@"[NEWCHAT] agent=%@ pending set", agent.name]);
     [[DSAStore shared] setPendingAgentId:agent.agentId];
 
     dispatch_async(dispatch_get_main_queue(), ^{
         void (^proceed)(void) = ^{
             DSABackToRoot();
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.7 * NSEC_PER_SEC)),
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)),
                            dispatch_get_main_queue(), ^{
                 BOOL clicked = DSAClickNewChat();
                 DSADiagLog(clicked ? @"[NEWCHAT] clicked sessionNewChatButton OK"

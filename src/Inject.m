@@ -14,6 +14,7 @@
 #import "AgentStore.h"
 
 void DSADiagLog(NSString *line);
+static BOOL DSATryDirectSend(void);   // 前置声明
 
 // —— 发送尝试状态：0=未开始, >0=已尝试次数, -1=已完成（不再动）——
 static int DSASendTries = 0;
@@ -140,6 +141,10 @@ static BOOL DSAFillPrompt(NSString *prompt) {
 #pragma mark - 发送（最多 3 次）
 
 static BOOL DSATrySendOnce(void) {
+    // ① 先试「底层直发」：直接调 App 自己的发送方法（存在才调）
+    if (DSATryDirectSend()) { DSADiagLog(@"[INJ] direct send (app method)"); return YES; }
+
+    // ② 退路：找发送控件点一下
     UIView *send = DSAFindSendControl();
     if (!send) { DSADiagLog(@"[INJ] no send control"); return NO; }
     if ([send isKindOfClass:[UIControl class]]) {
@@ -254,6 +259,48 @@ static void DSAHidePromptMessages(void) {
     } @catch (__unused NSException *e) {
         DSADiagLog([NSString stringWithFormat:@"[HIDE] exception %@", e.reason]);
     }
+}
+
+#pragma mark - 底层直发
+
+/// 在输入区容器 / 页面控制器上找 App 自己的发送方法并调用
+static BOOL DSATryDirectSend(void) {
+    @try {
+        UIViewController *top = DSATopMost(DSAKeyWindow().rootViewController);
+        if (!top) return NO;
+
+        // 收集候选对象：top VC、nav、以及类名含 InputArea 的视图
+        NSMutableArray *targets = [NSMutableArray arrayWithObject:top];
+        if (top.navigationController) [targets addObject:top.navigationController];
+        UIWindow *w = DSAKeyWindow();
+        NSMutableArray *stack = [NSMutableArray arrayWithObject:(UIView *)w];
+        int g = 0;
+        while (stack.count && g++ < 3000) {
+            UIView *v = stack.lastObject; [stack removeLastObject];
+            for (UIView *s2 in v.subviews) [stack addObject:s2];
+            if (!v.window) continue;
+            if ([NSStringFromClass([v class]) containsString:@"InputArea"]) [targets addObject:v];
+        }
+
+        NSArray *sels = @[ @"sendPrompt", @"sendMessage", @"submit", @"send", @"doSend" ];
+        for (id t in targets) {
+            for (NSString *sn in sels) {
+                SEL sel = NSSelectorFromString(sn);
+                if ([t respondsToSelector:sel]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+                    [t performSelector:sel];
+#pragma clang diagnostic pop
+                    DSADiagLog([NSString stringWithFormat:@"[INJ] called -[%@ %@]",
+                                 NSStringFromClass([t class]), sn]);
+                    return YES;
+                }
+            }
+        }
+    } @catch (__unused NSException *e) {
+        DSADiagLog([NSString stringWithFormat:@"[INJ] direct send exception %@", e.reason]);
+    }
+    return NO;
 }
 
 #pragma mark - 轮询

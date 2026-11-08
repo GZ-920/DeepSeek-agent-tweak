@@ -25,9 +25,11 @@ UIView *DSAFindSessionListView(void);
 
 #pragma mark - 区块内容
 
-static UIView *DSAMakeAgentSection(void) {
+static UIView *DSAMakeAgentSection(UIColor *bg) {
     UIView *sec = [[UIView alloc] initWithFrame:CGRectZero];
-    sec.backgroundColor = [UIColor clearColor];
+    // ★ 用侧边栏同色、不透明 → 遮住后方被压到这一带的对话行
+    sec.backgroundColor = bg ?: [UIColor systemGroupedBackgroundColor];
+    sec.opaque = YES;
 
     DSAStore *store = [DSAStore shared];
     [store loadIfNeeded];
@@ -118,10 +120,10 @@ static UIView *DSAMakeAgentSection(void) {
     makeRow(@"管理智能体", @"管理智能体", @"", @selector(settingsTapped:));
 
     [NSLayoutConstraint activateConstraints:@[
-        [stack.topAnchor constraintEqualToAnchor:sec.topAnchor],
+        [stack.topAnchor constraintEqualToAnchor:sec.topAnchor constant:4],
         [stack.leadingAnchor constraintEqualToAnchor:sec.leadingAnchor],
         [stack.trailingAnchor constraintEqualToAnchor:sec.trailingAnchor],
-        [stack.bottomAnchor constraintEqualToAnchor:sec.bottomAnchor],
+        [stack.bottomAnchor constraintEqualToAnchor:sec.bottomAnchor constant:-8],
     ]];
 
     DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section built agents=%lu convs=%lu",
@@ -150,7 +152,7 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     UIView *sec = objc_getAssociatedObject(sidebar, &kDSASidebarSectionTag);
     BOOL fresh = (sec == nil);
     if (fresh) {
-        sec = DSAMakeAgentSection();
+        sec = DSAMakeAgentSection(sidebar.backgroundColor);
         [sidebar addSubview:sec];
         objc_setAssociatedObject(sidebar, &kDSASidebarSectionTag, sec, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
