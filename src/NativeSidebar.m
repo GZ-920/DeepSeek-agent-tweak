@@ -42,7 +42,7 @@ static UIColor *DSASampleBackground(UIView *sidebar) {
         if (!cg) return [UIColor systemGroupedBackgroundColor];
         unsigned char px[4] = {0, 0, 0, 0};
         CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-        CGContextRef cc = CGBitmapContextCreate(px, 1, 1, 8, 4, cs, kCGImageAlphaPremultipliedLast);
+        CGContextRef cc = CGBitmapContextCreate(px, 1, 1, 8, 4, cs, (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
         CGColorSpaceRelease(cs);
         if (!cc) return [UIColor systemGroupedBackgroundColor];
         // 左下角（通常是空白背景）；CGBitmapContext 坐标系上下颠倒，y=0 对应图像底部
