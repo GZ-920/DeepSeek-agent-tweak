@@ -243,12 +243,29 @@ static BOOL DSAInsertSection(UIView *sidebar) {
                         verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
     if (h < 40) h = 200;
 
-    sec.frame = CGRectMake(lr.origin.x, top, width, h);
-    // ★ clearColor 也是「非 nil」，?: 兜底会失效 → 必须显式判断透明度
+    // ★ 用约束定位（不能用 frame：自动约束会和搜索框的约束打架，把它撑到 219 高）
     sec.backgroundColor = DSASampleBackground(sidebar);
     sec.opaque = YES;
     sec.clipsToBounds = YES;
     sec.layer.zPosition = 10000;
+
+    NSLayoutConstraint *topC = objc_getAssociatedObject(sec, &kDSATopConstraintTag);
+    if (!topC) {
+        topC = [NSLayoutConstraint constraintWithItem:sec attribute:NSLayoutAttributeTop
+                                           relatedBy:NSLayoutRelationEqual
+                                              toItem:host attribute:NSLayoutAttributeTop
+                                          multiplier:1 constant:top];
+        [NSLayoutConstraint activateConstraints:@[
+            topC,
+            [sec.leadingAnchor constraintEqualToAnchor:list.leadingAnchor],
+            [sec.trailingAnchor constraintEqualToAnchor:list.trailingAnchor],
+            [sec.heightAnchor constraintEqualToConstant:h],
+        ]];
+        objc_setAssociatedObject(sec, &kDSATopConstraintTag, topC, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] constraints activated top=%.0f h=%.0f", top, h]);
+    } else if (fabs(topC.constant - top) > 0.5) {
+        topC.constant = top;
+    }
     [host bringSubviewToFront:sec];
 
     // 诊断：这个点上到底是谁在最上层
