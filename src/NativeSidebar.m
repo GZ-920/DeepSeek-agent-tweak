@@ -19,6 +19,7 @@ static char kDSABeforeInsetTag;    // 记录列表原始 contentInset.top，便�
 @end
 
 void DSADiagLog(NSString *line);
+static UIView *DSAFindNativeSidebar(UIWindow *w);   // 前置声明（定义在文件末尾）
 BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFont);
 UIView *DSAFindSessionListView(void);
 
