@@ -123,10 +123,9 @@ static UIView *DSAFindListByTree(void) {
             [NSTimer scheduledTimerWithTimeInterval:0.2 repeats:YES
                                            block:^(NSTimer *timer) { DSAInjectTick(); }];
             [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES
-                                           block:^(NSTimer *timer) {
-                DSAEnsureNativeEntry();
-                DSAEnsureNativeSidebar();
-            }];
+                                           block:^(NSTimer *timer) { DSAEnsureNativeEntry(); }];
+            [NSTimer scheduledTimerWithTimeInterval:0.3 repeats:YES
+                                           block:^(NSTimer *timer) { DSAEnsureNativeSidebar(); }];
         });
         NSLog(@"[DSAgent] loaded");
     }

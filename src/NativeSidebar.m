@@ -167,30 +167,18 @@ static BOOL DSAInsertSection(UIView *sidebar) {
                         verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
     if (h < 40) h = 160;
     sec.frame = CGRectMake(0, top, width, h);
+    sec.hidden = NO;
+    sec.alpha = 1;
+    sec.layer.zPosition = 10000;
     [sidebar bringSubviewToFront:sec];
+    [sidebar.superview bringSubviewToFront:sidebar];   // 侧边栏本身也置顶
 
-    // ★ 不推约束：用列表 contentInset 腾位置（搜索框完全不动）
-    UIView *list = DSAFindSessionListView();
-    if (list && [list isKindOfClass:[UIScrollView class]]) {
-        UIScrollView *sv = (UIScrollView *)list;
-        UIEdgeInsets cur = sv.contentInset;
-        NSNumber *origObj = objc_getAssociatedObject(sv, &kDSABeforeInsetTag);
-        if (!origObj) {
-            objc_setAssociatedObject(sv, &kDSABeforeInsetTag, @(cur.top),
-                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-            origObj = @(cur.top);
-        }
-        CGFloat origTop = origObj.doubleValue;
-        CGFloat need = (top + h + 4) - origTop;     // 需要内容下沉多少
-        if (need > 1 && fabs(sv.contentInset.top - (origTop + need)) > 0.5) {
-            UIEdgeInsets ni = cur;
-            ni.top = origTop + need;
-            sv.contentInset = ni;
-            sv.scrollIndicatorInsets = ni;
-            DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] contentInset.top %.0f -> %.0f (orig %.0f)",
-                         origTop, ni.top, origTop]);
-        }
-    }
+    // ★ 不碰 contentInset：日志显示 App 每帧把它重置回原值（35 次重复），纯属打架。
+    //   改为纯遮挡：不透明背景 + zPosition 强制置顶。
+    sec.backgroundColor = sidebar.backgroundColor ?: [UIColor systemGroupedBackgroundColor];
+    sec.opaque = YES;
+    sec.layer.zPosition = 10000;                 // 同层渲染里排到最前
+    [sidebar bringSubviewToFront:sec];
 
     if (fresh) DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section added to sidebar at y=%.0f h=%.0f", top, h]);
     return YES;
