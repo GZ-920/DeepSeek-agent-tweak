@@ -134,53 +134,53 @@ static UIView *DSAMakeAgentSection(UIColor *bg) {
 #pragma mark - 插入（作为侧边栏子视图）
 
 static BOOL DSAInsertSection(UIView *sidebar) {
-    // 锚点：侧边栏里的搜索框
-    UIView *anchor = nil;
-    NSMutableArray *stack = [NSMutableArray arrayWithObject:sidebar];
-    int guard = 0;
-    while (stack.count && guard++ < 4000) {
-        UIView *v = stack.lastObject;
-        [stack removeLastObject];
-        for (UIView *s2 in v.subviews) [stack addObject:s2];
-        if (!v.window) continue;
-        NSString *c = NSStringFromClass([v class]);
-        if ([c containsString:@"SearchBar"] && v.bounds.size.width > 100) { anchor = v; break; }
-    }
-    if (!anchor) { DSADiagLog(@"[SIDEBAR] no search anchor"); return NO; }
+    UIView *list = DSAFindSessionListView();
+    if (!list || !list.superview) { DSADiagLog(@"[SIDEBAR] no list/superview"); return NO; }
+    UIView *host = list.superview;                 // ★ 和列表同一个父视图，必然同层
 
-    // 已有区块？只更新位置
-    UIView *sec = objc_getAssociatedObject(sidebar, &kDSASidebarSectionTag);
+    // 区块放进 host，并**直接插到列表上方**（aboveSubview 保证 z 序在列表之上）
+    UIView *sec = objc_getAssociatedObject(host, &kDSASidebarSectionTag);
     BOOL fresh = (sec == nil);
     if (fresh) {
         sec = DSAMakeAgentSection(sidebar.backgroundColor);
-        [sidebar addSubview:sec];
-        objc_setAssociatedObject(sidebar, &kDSASidebarSectionTag, sec, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [host insertSubview:sec aboveSubview:list];
+        objc_setAssociatedObject(host, &kDSASidebarSectionTag, sec, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    } else if (sec.superview != host) {
+        [host insertSubview:sec aboveSubview:list];
+    } else {
+        [host insertSubview:sec aboveSubview:list];   // 每次都重新压到列表之上
     }
 
-    // 定位：搜索框下沿（侧边栏坐标系）
-    CGFloat top = [anchor convertRect:anchor.bounds toView:sidebar].origin.y +
-                  anchor.bounds.size.height + 4;
-    CGFloat width = sidebar.bounds.size.width;
+    // 定位：贴着列表顶部（host 坐标系）
+    CGRect lr = [list convertRect:list.bounds toView:host];
+    CGFloat top = lr.origin.y;
+    CGFloat width = lr.size.width;
 
     CGFloat h = [sec systemLayoutSizeFittingSize:CGSizeMake(width, 0)
                   withHorizontalFittingPriority:UILayoutPriorityRequired
                         verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
-    if (h < 40) h = 160;
-    sec.frame = CGRectMake(0, top, width, h);
-    sec.hidden = NO;
-    sec.alpha = 1;
-    sec.layer.zPosition = 10000;
-    [sidebar bringSubviewToFront:sec];
-    [sidebar.superview bringSubviewToFront:sidebar];   // 侧边栏本身也置顶
+    if (h < 40) h = 200;
 
-    // ★ 不碰 contentInset：日志显示 App 每帧把它重置回原值（35 次重复），纯属打架。
-    //   改为纯遮挡：不透明背景 + zPosition 强制置顶。
+    sec.frame = CGRectMake(lr.origin.x, top, width, h);
     sec.backgroundColor = sidebar.backgroundColor ?: [UIColor systemGroupedBackgroundColor];
     sec.opaque = YES;
-    sec.layer.zPosition = 10000;                 // 同层渲染里排到最前
-    [sidebar bringSubviewToFront:sec];
+    sec.layer.zPosition = 10000;
+    [host bringSubviewToFront:sec];
 
-    if (fresh) DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section added to sidebar at y=%.0f h=%.0f", top, h]);
+    // 诊断：这个点上到底是谁在最上层
+    static int diagCount = 0;
+    if (diagCount++ % 10 == 0) {
+        CGPoint p = CGPointMake(CGRectGetMidX(sec.frame), CGRectGetMidY(sec.frame));
+        UIView *hit = [host hitTest:p withEvent:nil];
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] host=%@ sec=%@ hit=%@ hostCls=%@",
+                     NSStringFromClass([host class]),
+                     NSStringFromCGRect(sec.frame),
+                     hit ? NSStringFromClass([hit class]) : @"nil",
+                     NSStringFromClass([host class])]);
+    }
+
+    if (fresh) DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section inserted above list (host %@) at y=%.0f h=%.0f",
+                             NSStringFromClass([host class]), top, h]);
     return YES;
 }
 
@@ -198,11 +198,12 @@ void DSARefreshNativeSidebar(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
         UIWindow *w = DSAKeyWindow();
         UIView *sb = DSAFindNativeSidebar(w);
-        if (!sb) return;
-        UIView *sec = objc_getAssociatedObject(sb, &kDSASidebarSectionTag);
+        UIView *list = DSAFindSessionListView();
+        UIView *sec = (list.superview ? objc_getAssociatedObject(list.superview, &kDSASidebarSectionTag) : nil)
+                      ?: (sb ? objc_getAssociatedObject(sb, &kDSASidebarSectionTag) : nil);
         if (sec) {
             [sec removeFromSuperview];
-            objc_setAssociatedObject(sb, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            if (sec.superview) objc_setAssociatedObject(sec.superview, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             DSADiagLog(@"[SIDEBAR] section cleared for rebuild");
         }
         // 还原 contentInset（下次插入会重新计算）
