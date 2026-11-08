@@ -14,6 +14,7 @@
 
 static char kDSASidebarSectionTag;
 static char kDSATopConstraintTag;
+static char kDSAHeightConstraintTag;
 static CGFloat sSectionTop = -1;      // ★ 区块 top 只算一次（避免追逐会移动的搜索框）
 static CGFloat sSearchTop0 = -1;      // 搜索框原始 top（推送后强制按回）
 static CGFloat sSearchH0 = -1;        // 搜索框原始 height
@@ -112,37 +113,6 @@ static UIView *DSAMakeNativeStyleRow(NSString *title, NSString *accLabel, NSStri
     [row addTarget:[DSAEntryProxy class] action:act forControlEvents:UIControlEventTouchUpInside];
     [row.heightAnchor constraintEqualToConstant:47].active = YES;
 
-    Class cls = NSClassFromString(@"_TtCC13DeepSeek_Chat25SessionListCollectionView4Cell");
-    UIView *native = nil;
-    if (cls) {
-        @try { native = [[cls alloc] initWithFrame:CGRectMake(0, 0, 326, 47)]; }
-        @catch (__unused NSException *e) { native = nil; }
-    }
-    if (native) {
-        native.translatesAutoresizingMaskIntoConstraints = NO;
-        [row addSubview:native];
-        [NSLayoutConstraint activateConstraints:@[
-            [native.topAnchor constraintEqualToAnchor:row.topAnchor],
-            [native.bottomAnchor constraintEqualToAnchor:row.bottomAnchor],
-            [native.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
-            [native.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
-        ]];
-        // 把 cell 里第一个有文字的 label 换成我们的标题
-        NSMutableArray *st = [NSMutableArray arrayWithObject:native];
-        while (st.count) {
-            UIView *v = st.lastObject; [st removeLastObject];
-            for (UIView *c in v.subviews) [st addObject:c];
-            if (![v isKindOfClass:[UILabel class]]) continue;
-            UILabel *l = (UILabel *)v;
-            if (!l.text.length) continue;
-            l.text = title;
-            break;
-        }
-        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] reused native cell %@", NSStringFromClass(cls)]);
-        return row;
-    }
-
-    // 退回：自绘 label（按实测排版）
     CGFloat lead = 22, fsz = 18;
     UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
     lab.translatesAutoresizingMaskIntoConstraints = NO;
@@ -155,6 +125,17 @@ static UIView *DSAMakeNativeStyleRow(NSString *title, NSString *accLabel, NSStri
         [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:lead],
         [lab.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-lead],
         [lab.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+    ]];
+
+    UIView *sep = [[UIView alloc] initWithFrame:CGRectZero];
+    sep.translatesAutoresizingMaskIntoConstraints = NO;
+    sep.backgroundColor = [UIColor separatorColor];
+    [row addSubview:sep];
+    [NSLayoutConstraint activateConstraints:@[
+        [sep.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:lead],
+        [sep.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
+        [sep.bottomAnchor constraintEqualToAnchor:row.bottomAnchor],
+        [sep.heightAnchor constraintEqualToConstant:0.5],
     ]];
     return row;
 }
@@ -294,22 +275,29 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     sec.layer.zPosition = 10000;
 
     NSLayoutConstraint *topC = objc_getAssociatedObject(sec, &kDSATopConstraintTag);
+    NSLayoutConstraint *hC = objc_getAssociatedObject(sec, &kDSAHeightConstraintTag);
     if (!topC) {
         topC = [NSLayoutConstraint constraintWithItem:sec attribute:NSLayoutAttributeTop
                                            relatedBy:NSLayoutRelationEqual
                                               toItem:host attribute:NSLayoutAttributeTop
                                           multiplier:1 constant:top];
+        hC = [sec.heightAnchor constraintEqualToConstant:h];
         [NSLayoutConstraint activateConstraints:@[
             topC,
             [sec.leadingAnchor constraintEqualToAnchor:list.leadingAnchor],
             [sec.trailingAnchor constraintEqualToAnchor:list.trailingAnchor],
-            [sec.heightAnchor constraintEqualToConstant:h],
+            hC,
         ]];
         objc_setAssociatedObject(sec, &kDSATopConstraintTag, topC, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(sec, &kDSAHeightConstraintTag, hC, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] constraints activated top=%.0f h=%.0f", top, h]);
-    } else if (fabs(topC.constant - top) > 0.5) {
-        topC.constant = top;
+    } else {
+        if (fabs(topC.constant - top) > 0.5) topC.constant = top;
+        if (hC && fabs(hC.constant - h) > 0.5) hC.constant = h;   // ★ 内容变化时同步高度
     }
+    [host layoutIfNeeded];
+    [sec setNeedsLayout];
+    [sec layoutIfNeeded];
     [host bringSubviewToFront:sec];
 
     // 诊断：这个点上到底是谁在最上层
