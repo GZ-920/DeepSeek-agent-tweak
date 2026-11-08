@@ -10,6 +10,7 @@
 #import <objc/runtime.h>
 #import "DSAShared.h"
 #import "AgentStore.h"
+#import "DSALogos.h"
 
 static char kDSASidebarSectionTag;
 static char kDSATopConstraintTag;
@@ -27,178 +28,221 @@ void DSADiagLog(NSString *line);
 static UIView *DSAFindNativeSidebar(UIWindow *w);   // 前置声明（定义在文件末尾）
 
 /// 取侧边栏真实背景色：先看 backgroundColor 是否不透明，否则渲染后采样像素
-static int DSAMedian5(int *arr) {
-    for (int a = 0; a < 4; a++)
-        for (int b = a + 1; b < 5; b++)
-            if (arr[b] < arr[a]) { int t = arr[a]; arr[a] = arr[b]; arr[b] = t; }
-    return arr[2];
-}
+#pragma mark - 面板视图（不透明主体 + 底部羽化渐变）
 
-static UIColor *DSASampleBackground(UIView *sidebar) {
-    // 静态色直接用；否则渲染采样（每 2 秒一次，跟随深色模式自动更新）
-    static UIColor *cached;
-    static NSTimeInterval last = 0;
-    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
-    if (cached && now - last < 2.0) return cached;
-
-    UIColor *c = sidebar.backgroundColor;
-    if (c) {
-        CGFloat a = 1;
-        if (![c getRed:NULL green:NULL blue:NULL alpha:&a]) { CGFloat w = 0; [c getWhite:&w alpha:&a]; }
-        if (a >= 0.9) { cached = c; last = now; return c; }
-    }
-    @try {
-        CGSize sz = sidebar.bounds.size;
-        if (sz.width < 8 || sz.height < 8) return cached ?: [UIColor systemGroupedBackgroundColor];
-        UIGraphicsImageRenderer *rend = [[UIGraphicsImageRenderer alloc] initWithSize:sz];
-        UIImage *img = [rend imageWithActions:^(UIGraphicsImageRendererContext *rc) {
-            [sidebar drawViewHierarchyInRect:CGRectMake(0, 0, sz.width, sz.height) afterScreenUpdates:NO];
+/// 背景：浅色纯白 / 深色 #0F0F0F（动态，随系统切换）
+static UIColor *DSAPanelColor(void) {
+    if (@available(iOS 13.0, *)) {
+        return [UIColor colorWithDynamicProvider:^(UITraitCollection *tc) {
+            if (tc.userInterfaceStyle == UIUserInterfaceStyleDark)
+                return [UIColor colorWithRed:15/255.0 green:15/255.0 blue:15/255.0 alpha:1];
+            return [UIColor whiteColor];
         }];
-        CGImageRef cg = img.CGImage;
-        if (!cg) return cached ?: [UIColor systemGroupedBackgroundColor];
-
-        // ★ 之前把 1x1 采样点画在上下文(x>=1)之外 → 恒读到 0,0,0。
-        //   正确做法：先从原图裁出 1x1 子图，再画进 1x1 上下文。
-        int rs[5], gs[5], bs[5];
-        for (int i = 0; i < 5; i++) {
-            CGFloat yy = (i + 0.5) / 5.0 * sz.height;
-            CGImageRef sub = CGImageCreateWithImageInRect(cg, CGRectMake(1, yy, 1, 1));
-            if (!sub) return cached ?: [UIColor systemGroupedBackgroundColor];
-            unsigned char px[4] = {0, 0, 0, 0};
-            CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-            CGContextRef cc = CGBitmapContextCreate(px, 1, 1, 8, 4, cs,
-                                                    (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
-            CGColorSpaceRelease(cs);
-            if (!cc) { CGImageRelease(sub); return cached ?: [UIColor systemGroupedBackgroundColor]; }
-            CGContextDrawImage(cc, CGRectMake(0, 0, 1, 1), sub);
-            CGContextRelease(cc);
-            CGImageRelease(sub);
-            rs[i] = px[0]; gs[i] = px[1]; bs[i] = px[2];
-        }
-        int R = DSAMedian5(rs), G = DSAMedian5(gs), B = DSAMedian5(bs);
-        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sampled bg rgb(%d,%d,%d)", R, G, B]);
-        // 浅色模式下采到近黑 = 采样不可信（渲染时机/透明），退回**动态**系统色以跟随深色模式
-        BOOL light = (UITraitCollection.currentTraitCollection.userInterfaceStyle != UIUserInterfaceStyleDark);
-        if (light && R < 12 && G < 12 && B < 12) {
-            cached = [UIColor systemGroupedBackgroundColor];
-            last = now;
-            DSADiagLog(@"[SIDEBAR] near-black in light mode → use adaptive systemGroupedBackground");
-            return cached;
-        }
-        cached = [UIColor colorWithRed:R / 255.0 green:G / 255.0 blue:B / 255.0 alpha:1];
-        last = now;
-        return cached;
-    } @catch (__unused NSException *e) {
-        return cached ?: [UIColor systemGroupedBackgroundColor];
     }
+    return [UIColor whiteColor];
 }
+
+static const CGFloat kDSAFeatherH = 44;     // 羽化高度（半径大一点）
+static CGFloat kFeatherSafe(CGFloat h) { return MIN(kDSAFeatherH, h); }
+
+@interface DSAPanelView : UIView
+@property (nonatomic, strong) UIView *bodyBg;
+@property (nonatomic, strong) UIView *feather;
+@property (nonatomic, strong) UIView *content;
+@end
+
+@implementation DSAPanelView
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = UIColor.clearColor;
+        self.opaque = NO;
+        self.clipsToBounds = YES;
+
+        _bodyBg = [UIView new];
+        _bodyBg.backgroundColor = DSAPanelColor();
+        _bodyBg.opaque = YES;
+        [self addSubview:_bodyBg];
+
+        // 底部羽化：主体色 → 透明
+        _feather = [UIView new];
+        _feather.backgroundColor = UIColor.clearColor;
+        [self addSubview:_feather];
+        CAGradientLayer *g = [CAGradientLayer layer];
+        g.colors = @[(id)DSAPanelColor().CGColor, (id)[DSAPanelColor() colorWithAlphaComponent:0].CGColor];
+        g.startPoint = CGPointMake(0.5, 0);
+        g.endPoint = CGPointMake(0.5, 1);
+        [_feather.layer addSublayer:g];
+        objc_setAssociatedObject(_feather, "grad", g, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+        _content = [UIView new];
+        _content.backgroundColor = UIColor.clearColor;
+        [self addSubview:_content];
+    }
+    return self;
+}
+/// 内容高度（供外部算面板总高：内容 + 羽化）
+- (CGFloat)contentHeightForWidth:(CGFloat)w {
+    UIView *first = self.content.subviews.firstObject;
+    if (!first || w < 1) return 0;
+    return [first systemLayoutSizeFittingSize:CGSizeMake(w, 0)
+                  withHorizontalFittingPriority:UILayoutPriorityRequired
+                        verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    CGFloat w = self.bounds.size.width, h = self.bounds.size.height;
+    CGFloat bodyH = MAX(0, h - kDSAFeatherH);
+    self.bodyBg.frame = CGRectMake(0, 0, w, bodyH);
+    self.feather.frame = CGRectMake(0, bodyH, w, kFeatherSafe(h));
+    CAGradientLayer *g = objc_getAssociatedObject(self.feather, "grad");
+    g.frame = self.feather.bounds;
+    self.content.frame = CGRectMake(0, 0, w, h);
+}
+@end
 
 #pragma mark - 区块内容
 
-static UIView *DSAMakeAgentSection(UIColor *bg) {
-    UIView *sec = [[UIView alloc] initWithFrame:CGRectZero];
-    // ★ 用侧边栏同色、不透明 → 遮住后方被压到这一带的对话行
-    sec.backgroundColor = bg ?: [UIColor systemGroupedBackgroundColor];
-    sec.opaque = YES;
+/// 复用原版对话 cell（拿它的排版/样式），失败则退回普通 label
+static UIView *DSAMakeNativeStyleRow(NSString *title, NSString *accLabel, NSString *accValue, SEL act) {
+    UIControl *row = [[UIControl alloc] initWithFrame:CGRectZero];
+    row.translatesAutoresizingMaskIntoConstraints = NO;
+    row.accessibilityLabel = accLabel;
+    row.accessibilityValue = accValue;
+    [row addTarget:[DSAEntryProxy class] action:act forControlEvents:UIControlEventTouchUpInside];
+    [row.heightAnchor constraintEqualToConstant:47].active = YES;
+
+    Class cls = NSClassFromString(@"_TtCC13DeepSeek_Chat25SessionListCollectionView4Cell");
+    UIView *native = nil;
+    if (cls) {
+        @try { native = [[cls alloc] initWithFrame:CGRectMake(0, 0, 326, 47)]; }
+        @catch (__unused NSException *e) { native = nil; }
+    }
+    if (native) {
+        native.translatesAutoresizingMaskIntoConstraints = NO;
+        [row addSubview:native];
+        [NSLayoutConstraint activateConstraints:@[
+            [native.topAnchor constraintEqualToAnchor:row.topAnchor],
+            [native.bottomAnchor constraintEqualToAnchor:row.bottomAnchor],
+            [native.leadingAnchor constraintEqualToAnchor:row.leadingAnchor],
+            [native.trailingAnchor constraintEqualToAnchor:row.trailingAnchor],
+        ]];
+        // 把 cell 里第一个有文字的 label 换成我们的标题
+        NSMutableArray *st = [NSMutableArray arrayWithObject:native];
+        while (st.count) {
+            UIView *v = st.lastObject; [st removeLastObject];
+            for (UIView *c in v.subviews) [st addObject:c];
+            if (![v isKindOfClass:[UILabel class]]) continue;
+            UILabel *l = (UILabel *)v;
+            if (!l.text.length) continue;
+            l.text = title;
+            break;
+        }
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] reused native cell %@", NSStringFromClass(cls)]);
+        return row;
+    }
+
+    // 退回：自绘 label（按实测排版）
+    CGFloat lead = 22, fsz = 18;
+    UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
+    lab.translatesAutoresizingMaskIntoConstraints = NO;
+    lab.text = title;
+    lab.font = [UIFont systemFontOfSize:fsz - 3];
+    lab.textColor = [UIColor labelColor];
+    lab.userInteractionEnabled = NO;
+    [row addSubview:lab];
+    [NSLayoutConstraint activateConstraints:@[
+        [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:lead],
+        [lab.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-lead],
+        [lab.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
+    ]];
+    return row;
+}
+
+/// 区块：logo 标题 + 智能体列表 + 设置（不再放「智能体对话」）
+static UIView *DSAMakeAgentSection(void) {
+    DSAPanelView *panel = [[DSAPanelView alloc] initWithFrame:CGRectZero];
+    panel.translatesAutoresizingMaskIntoConstraints = NO;
 
     DSAStore *store = [DSAStore shared];
     [store loadIfNeeded];
     NSArray<DSAAgent *> *agents = store.agents;
 
-    CGFloat lead = 16, rowH = 47, fsz = 18;
-    DSAMeasureListMetrics(&lead, &rowH, &fsz);
-
     UIStackView *stack = [[UIStackView alloc] initWithFrame:CGRectZero];
     stack.axis = UILayoutConstraintAxisVertical;
     stack.spacing = 0;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
-    [sec addSubview:stack];
+    [panel.content addSubview:stack];
 
-    UILabel *(^makeHeader)(NSString *) = ^UILabel *(NSString *t) {
-        UILabel *l = [[UILabel alloc] initWithFrame:CGRectZero];
-        l.translatesAutoresizingMaskIntoConstraints = NO;
-        l.text = t;
-        l.font = [UIFont systemFontOfSize:fsz - 5 weight:UIFontWeightSemibold];
-        l.textColor = [UIColor secondaryLabelColor];
-        [stack addArrangedSubview:l];                 // ★ 先加入，再加约束
+    // —— 标题：用 logo 图（深色用白字，浅色用黑字）——
+    BOOL dark = NO;
+    if (@available(iOS 13.0, *)) dark = (UITraitCollection.currentTraitCollection.userInterfaceStyle == UIUserInterfaceStyleDark);
+    UIImage *logo = DSALogoImage(dark);
+    if (logo) {
+        UIImageView *iv = [[UIImageView alloc] initWithImage:logo];
+        iv.translatesAutoresizingMaskIntoConstraints = NO;
+        iv.contentMode = UIViewContentModeScaleAspectFit;
+        iv.tintColor = [UIColor labelColor];
+        [stack addArrangedSubview:iv];
+        // 1797x456 → 高 24 时宽约 95
         [NSLayoutConstraint activateConstraints:@[
-            [l.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:lead],
-            [l.trailingAnchor constraintEqualToAnchor:stack.trailingAnchor constant:-lead],
-            [l.heightAnchor constraintEqualToConstant:28],
+            [iv.heightAnchor constraintEqualToConstant:24],
+            [iv.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:22],
+            [iv.widthAnchor constraintEqualToConstant:24 * (1797.0 / 456.0)],
+            [iv.topAnchor constraintEqualToAnchor:stack.topAnchor constant:8],
         ]];
-        return l;
-    };
+        UILabel *spacer = [[UILabel alloc] initWithFrame:CGRectZero];
+        spacer.text = @" ";
+        spacer.font = [UIFont systemFontOfSize:6];
+        [stack addArrangedSubview:spacer];
+    } else {
+        UILabel *t = [[UILabel alloc] initWithFrame:CGRectZero];
+        t.translatesAutoresizingMaskIntoConstraints = NO;
+        t.text = @"智能体";
+        t.font = [UIFont boldSystemFontOfSize:18];
+        [stack addArrangedSubview:t];
+        [t.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:22].active = YES;
+        [t.heightAnchor constraintEqualToConstant:32].active = YES;
+    }
 
-    void (^makeRow)(NSString *, NSString *, NSString *, SEL) =
-    ^(NSString *title, NSString *accLabel, NSString *accValue, SEL act) {
-        UIControl *row = [[UIControl alloc] initWithFrame:CGRectZero];
-        row.translatesAutoresizingMaskIntoConstraints = NO;
-        row.accessibilityLabel = accLabel;
-        row.accessibilityValue = accValue;
-        [row addTarget:[DSAEntryProxy class] action:act forControlEvents:UIControlEventTouchUpInside];
-        [stack addArrangedSubview:row];               // ★ 先加入
-
-        UILabel *lab = [[UILabel alloc] initWithFrame:CGRectZero];
-        lab.translatesAutoresizingMaskIntoConstraints = NO;
-        lab.text = title;
-        lab.font = [UIFont systemFontOfSize:fsz - 3];
-        lab.textColor = [UIColor labelColor];
-        lab.userInteractionEnabled = NO;
-        [row addSubview:lab];
-
-        [NSLayoutConstraint activateConstraints:@[
-            [row.heightAnchor constraintEqualToConstant:rowH * 0.85],
-            [lab.leadingAnchor constraintEqualToAnchor:row.leadingAnchor constant:lead],
-            [lab.trailingAnchor constraintEqualToAnchor:row.trailingAnchor constant:-lead],
-            [lab.centerYAnchor constraintEqualToAnchor:row.centerYAnchor],
-        ]];
-    };
-
-    UILabel *(^makeEmpty)(NSString *) = ^UILabel *(NSString *t) {
+    // —— 智能体列表 ——
+    for (DSAAgent *ag in agents) {
+        UIView *r = DSAMakeNativeStyleRow(ag.name, ag.name, ag.agentId, @selector(agentRowTapped:));
+        [stack addArrangedSubview:r];
+    }
+    if (!agents.count) {
         UILabel *e = [[UILabel alloc] initWithFrame:CGRectZero];
         e.translatesAutoresizingMaskIntoConstraints = NO;
-        e.text = t;
-        e.font = [UIFont systemFontOfSize:fsz - 4];
+        e.text = @"还没有智能体";
+        e.font = [UIFont systemFontOfSize:15];
         e.textColor = [UIColor tertiaryLabelColor];
         [stack addArrangedSubview:e];
-        [e.heightAnchor constraintEqualToConstant:30].active = YES;
-        [e.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:lead].active = YES;
-        return e;
-    };
-
-    // 1) 智能体对话（置顶）
-    makeHeader(@"智能体对话");
-    NSInteger convCount = 0;
-    for (DSAAgent *ag in agents) {
-        for (NSString *sid in [store sessionIdsForAgent:ag.agentId]) {
-            NSString *cn = [store conversationNameForSession:sid];
-            NSString *label = cn.length ? [NSString stringWithFormat:@"%@ · %@", ag.name, cn] : ag.name;
-            makeRow(label, label, sid, @selector(convRowTapped:));
-            if (++convCount >= 8) break;
-        }
-        if (convCount >= 8) break;
+        [e.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:22].active = YES;
+        [e.heightAnchor constraintEqualToConstant:36].active = YES;
     }
-    if (!convCount) makeEmpty(@"暂无对话");
 
-    // 2) 智能体（点击直接开新对话）
-    makeHeader(@"智能体");
-    for (DSAAgent *ag in agents) makeRow(ag.name, ag.name, ag.agentId, @selector(agentRowTapped:));
-    if (!agents.count) makeEmpty(@"还没有智能体");
-
-    // 3) 设置
-    makeHeader(@"设置");
-    makeRow(@"管理智能体", @"管理智能体", @"", @selector(settingsTapped:));
+    // —— 设置 ——
+    UILabel *sh = [[UILabel alloc] initWithFrame:CGRectZero];
+    sh.translatesAutoresizingMaskIntoConstraints = NO;
+    sh.text = @"设置";
+    sh.font = [UIFont systemFontOfSize:14 weight:UIFontWeightSemibold];
+    sh.textColor = [UIColor secondaryLabelColor];
+    [stack addArrangedSubview:sh];
+    [NSLayoutConstraint activateConstraints:@[
+        [sh.leadingAnchor constraintEqualToAnchor:stack.leadingAnchor constant:22],
+        [sh.heightAnchor constraintEqualToConstant:28],
+    ]];
+    [stack addArrangedSubview:DSAMakeNativeStyleRow(@"管理智能体", @"管理智能体", @"", @selector(settingsTapped:))];
 
     [NSLayoutConstraint activateConstraints:@[
-        [stack.topAnchor constraintEqualToAnchor:sec.topAnchor constant:4],
-        [stack.leadingAnchor constraintEqualToAnchor:sec.leadingAnchor],
-        [stack.trailingAnchor constraintEqualToAnchor:sec.trailingAnchor],
-        [stack.bottomAnchor constraintEqualToAnchor:sec.bottomAnchor constant:-8],
+        [stack.topAnchor constraintEqualToAnchor:panel.content.topAnchor],
+        [stack.leadingAnchor constraintEqualToAnchor:panel.content.leadingAnchor],
+        [stack.trailingAnchor constraintEqualToAnchor:panel.content.trailingAnchor],
+        [stack.bottomAnchor constraintEqualToAnchor:panel.content.bottomAnchor],
     ]];
 
-    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section built agents=%lu convs=%lu",
-                 (unsigned long)agents.count, (unsigned long)convCount]);
-    return sec;
+    DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] panel built agents=%lu", (unsigned long)agents.count]);
+    return panel;
 }
 
 #pragma mark - 插入（作为侧边栏子视图）
@@ -212,7 +256,7 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     UIView *sec = objc_getAssociatedObject(host, &kDSASidebarSectionTag);
     BOOL fresh = (sec == nil);
     if (fresh) {
-        sec = DSAMakeAgentSection(sidebar.backgroundColor);
+        sec = DSAMakeAgentSection();
         // ★ 必须关掉自动约束：否则在纯约束容器里会生成与搜索框冲突的约束，
         //   Auto Layout 会把搜索框撑高来化解（实测 49 → 219）
         sec.translatesAutoresizingMaskIntoConstraints = NO;
@@ -240,14 +284,12 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     }
     CGFloat top = sSectionTop;
 
-    CGFloat h = [sec systemLayoutSizeFittingSize:CGSizeMake(width, 0)
-                  withHorizontalFittingPriority:UILayoutPriorityRequired
-                        verticalFittingPriority:UILayoutPriorityFittingSizeLevel].height;
-    if (h < 40) h = 200;
+    CGFloat h = 0;
+    if ([sec isKindOfClass:[DSAPanelView class]])
+        h = [(DSAPanelView *)sec contentHeightForWidth:width] + kDSAFeatherH;
+    if (h < 60) h = 160;
 
     // ★ 用约束定位（不能用 frame：自动约束会和搜索框的约束打架，把它撑到 219 高）
-    sec.backgroundColor = DSASampleBackground(sidebar);
-    sec.opaque = YES;
     sec.clipsToBounds = YES;
     sec.layer.zPosition = 10000;
 
@@ -283,7 +325,7 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     }
 
     // ★ 腾出空间：一次性推到位；带防失控（上限 + 搜索框校正失败即回滚并停手）
-    CGFloat wantListTop = top + h + 4;
+    CGFloat wantListTop = top + h - 10;      // 稍微少留一点（之前 +4 偏大）
     CGFloat listTopNow = [list convertRect:list.bounds toView:host].origin.y;
     CGFloat need = wantListTop - listTopNow;
     if (need > 1 && !sPushBlocked && sMaxPushed < 700) {
