@@ -32,42 +32,53 @@ static int DSAMedian5(int *arr) {
 }
 
 static UIColor *DSASampleBackground(UIView *sidebar) {
+    // 静态色直接用；否则渲染采样（每 2 秒一次，跟随深色模式自动更新）
+    static UIColor *cached;
+    static NSTimeInterval last = 0;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (cached && now - last < 2.0) return cached;
+
     UIColor *c = sidebar.backgroundColor;
     if (c) {
         CGFloat a = 1;
         if (![c getRed:NULL green:NULL blue:NULL alpha:&a]) { CGFloat w = 0; [c getWhite:&w alpha:&a]; }
-        if (a >= 0.9) return c;
+        if (a >= 0.9) { cached = c; last = now; return c; }
     }
     @try {
         CGSize sz = sidebar.bounds.size;
-        if (sz.width < 4 || sz.height < 4) return [UIColor systemGroupedBackgroundColor];
+        if (sz.width < 8 || sz.height < 8) return cached ?: [UIColor systemGroupedBackgroundColor];
         UIGraphicsImageRenderer *rend = [[UIGraphicsImageRenderer alloc] initWithSize:sz];
         UIImage *img = [rend imageWithActions:^(UIGraphicsImageRendererContext *rc) {
             [sidebar drawViewHierarchyInRect:CGRectMake(0, 0, sz.width, sz.height) afterScreenUpdates:NO];
         }];
         CGImageRef cg = img.CGImage;
-        if (!cg) return [UIColor systemGroupedBackgroundColor];
+        if (!cg) return cached ?: [UIColor systemGroupedBackgroundColor];
 
-        // 沿最左缘取 5 个点（x=1），按通道取中位数 → 避开采到文字
+        // ★ 之前把 1x1 采样点画在上下文(x>=1)之外 → 恒读到 0,0,0。
+        //   正确做法：先从原图裁出 1x1 子图，再画进 1x1 上下文。
         int rs[5], gs[5], bs[5];
         for (int i = 0; i < 5; i++) {
+            CGFloat yy = (i + 0.5) / 5.0 * sz.height;
+            CGImageRef sub = CGImageCreateWithImageInRect(cg, CGRectMake(1, yy, 1, 1));
+            if (!sub) return cached ?: [UIColor systemGroupedBackgroundColor];
             unsigned char px[4] = {0, 0, 0, 0};
             CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
             CGContextRef cc = CGBitmapContextCreate(px, 1, 1, 8, 4, cs,
                                                     (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
             CGColorSpaceRelease(cs);
-            if (!cc) return [UIColor systemGroupedBackgroundColor];
-            // CGBitmapContext y 轴向上：y=0 对应图像底边
-            CGFloat yy = (i + 0.5) / 5.0;
-            CGContextDrawImage(cc, CGRectMake(1, yy, 1, 1), cg);
+            if (!cc) { CGImageRelease(sub); return cached ?: [UIColor systemGroupedBackgroundColor]; }
+            CGContextDrawImage(cc, CGRectMake(0, 0, 1, 1), sub);
             CGContextRelease(cc);
+            CGImageRelease(sub);
             rs[i] = px[0]; gs[i] = px[1]; bs[i] = px[2];
         }
         int R = DSAMedian5(rs), G = DSAMedian5(gs), B = DSAMedian5(bs);
+        cached = [UIColor colorWithRed:R / 255.0 green:G / 255.0 blue:B / 255.0 alpha:1];
+        last = now;
         DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sampled bg rgb(%d,%d,%d)", R, G, B]);
-        return [UIColor colorWithRed:R / 255.0 green:G / 255.0 blue:B / 255.0 alpha:1];
+        return cached;
     } @catch (__unused NSException *e) {
-        return [UIColor systemGroupedBackgroundColor];
+        return cached ?: [UIColor systemGroupedBackgroundColor];
     }
 }
 
@@ -204,18 +215,11 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     CGFloat width = lr.size.width;
     if (sSectionTop < 0) {
         CGFloat top0 = lr.origin.y;
-        NSMutableArray *st = [NSMutableArray arrayWithObject:host];
-        int g2 = 0;
-        while (st.count && g2++ < 2000) {
-            UIView *v = st.lastObject; [st removeLastObject];
-            for (UIView *s2 in v.subviews) [st addObject:s2];
-            if (!v.window) continue;
-            if ([NSStringFromClass([v class]) containsString:@"SearchBar"] && v.bounds.size.width > 100) {
-                CGRect r = [v convertRect:v.bounds toView:host];
-                CGFloat sb = r.origin.y + r.size.height + 4;
-                if (sb > top0) top0 = sb;
-                break;
-            }
+        UIView *sb0 = DSAFindSearchBarView();
+        if (sb0) {
+            CGRect r = [sb0 convertRect:sb0.bounds toView:host];
+            CGFloat sb = r.origin.y + r.size.height + 4;
+            if (sb > top0) top0 = sb;
         }
         sSectionTop = top0;
         DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] section top locked at %.0f", sSectionTop]);
@@ -253,16 +257,8 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     CGFloat need = wantListTop - listTopNow;
     if (need > 1 && !sPushBlocked && sMaxPushed < 700) {
         // 找搜索框（全局），推送前记位置
-        UIView *sb = nil;
+        UIView *sb = DSAFindSearchBarView();          // ★ 用导出的查找器（带缓存，节流 2s）
         UIWindow *win = host.window ?: DSAKeyWindow();
-        NSMutableArray *st = [NSMutableArray arrayWithObject:(UIView *)win];
-        int g2 = 0;
-        while (st.count && g2++ < 3000) {
-            UIView *v = st.lastObject; [st removeLastObject];
-            for (UIView *s2 in v.subviews) [st addObject:s2];
-            if (!v.window) continue;
-            if ([NSStringFromClass([v class]) containsString:@"SearchBar"] && v.bounds.size.width > 100) { sb = v; break; }
-        }
         CGFloat sbBefore = sb ? [sb convertRect:sb.bounds toView:win].origin.y : -1;
         CGFloat c0list = 0;
         NSLayoutConstraint *listC = nil;

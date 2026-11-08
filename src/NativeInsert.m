@@ -165,6 +165,29 @@ BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat moveBy, UIView 
     return YES;
 }
 
+/// 全局找搜索框（导出给侧边栏用）——用缓存避免每次都遍历
+UIView *DSAFindSearchBarView(void) {
+    static UIView *cached;
+    static NSTimeInterval last = 0;
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (cached && cached.window && now - last < 2.0) return cached;
+    UIWindow *w = DSAKeyWindow();
+    if (!w) return cached;
+    NSMutableArray *st = [NSMutableArray arrayWithObject:(UIView *)w];
+    int g = 0;
+    UIView *found = nil;
+    while (st.count && g++ < 20000) {
+        UIView *v = st.lastObject; [st removeLastObject];
+        for (UIView *s2 in v.subviews) [st addObject:s2];
+        if (!v.window || v.hidden) continue;
+        if ([NSStringFromClass([v class]) containsString:@"SearchBar"] && v.bounds.size.width > 100) {
+            found = v; break;
+        }
+    }
+    if (found) { cached = found; last = now; }
+    return found;
+}
+
 /// 量出原生会话列表的真实排版参数（左边距 / 行高 / 字号），供智能体区块套用
 /// 返回 YES 表示量到了
 BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFont) {

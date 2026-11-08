@@ -24,6 +24,7 @@ void DSAEnsureFloatingEntry(void);
 // NativeInsert.m
 void DSAEnsureNativeEntry(void);
 UIView *DSAFindSessionListView(void);
+UIView *DSAFindSearchBarView(void);
 BOOL DSAMeasureListMetrics(CGFloat *outLeading, CGFloat *outRowH, CGFloat *outFont);
 BOOL DSAPushListToTotal(UIView *list, UIView *container, CGFloat neededTotal, UIView *searchBar);
 // NativeSidebar.m
