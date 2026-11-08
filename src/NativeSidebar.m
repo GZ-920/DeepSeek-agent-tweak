@@ -206,18 +206,7 @@ void DSARefreshNativeSidebar(void) {
             if (sec.superview) objc_setAssociatedObject(sec.superview, &kDSASidebarSectionTag, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             DSADiagLog(@"[SIDEBAR] section cleared for rebuild");
         }
-        // 还原 contentInset（下次插入会重新计算）
-        UIView *list = DSAFindSessionListView();
-        if (list && [list isKindOfClass:[UIScrollView class]]) {
-            UIScrollView *sv = (UIScrollView *)list;
-            NSNumber *orig = objc_getAssociatedObject(sv, &kDSABeforeInsetTag);
-            if (orig) {
-                UIEdgeInsets ni = sv.contentInset;
-                ni.top = orig.doubleValue;
-                sv.contentInset = ni;
-                sv.scrollIndicatorInsets = ni;
-            }
-        }
+        // 不再改 contentInset，无需还原
     });
 }
 
