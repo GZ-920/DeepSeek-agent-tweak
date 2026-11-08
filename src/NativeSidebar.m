@@ -12,6 +12,7 @@
 #import "AgentStore.h"
 
 static char kDSASidebarSectionTag;
+static char kDSATopConstraintTag;
 static CGFloat sSectionTop = -1;      // ★ 区块 top 只算一次（避免追逐会移动的搜索框）
 static CGFloat sMaxPushed = 0;        // 已推送总量（防失控）
 static BOOL sPushBlocked = NO;        // 校正失败后永久停止推送
@@ -73,9 +74,17 @@ static UIColor *DSASampleBackground(UIView *sidebar) {
             rs[i] = px[0]; gs[i] = px[1]; bs[i] = px[2];
         }
         int R = DSAMedian5(rs), G = DSAMedian5(gs), B = DSAMedian5(bs);
+        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sampled bg rgb(%d,%d,%d)", R, G, B]);
+        // 浅色模式下采到近黑 = 采样不可信（渲染时机/透明），退回**动态**系统色以跟随深色模式
+        BOOL light = (UITraitCollection.currentTraitCollection.userInterfaceStyle != UIUserInterfaceStyleDark);
+        if (light && R < 12 && G < 12 && B < 12) {
+            cached = [UIColor systemGroupedBackgroundColor];
+            last = now;
+            DSADiagLog(@"[SIDEBAR] near-black in light mode → use adaptive systemGroupedBackground");
+            return cached;
+        }
         cached = [UIColor colorWithRed:R / 255.0 green:G / 255.0 blue:B / 255.0 alpha:1];
         last = now;
-        DSADiagLog([NSString stringWithFormat:@"[SIDEBAR] sampled bg rgb(%d,%d,%d)", R, G, B]);
         return cached;
     } @catch (__unused NSException *e) {
         return cached ?: [UIColor systemGroupedBackgroundColor];
@@ -202,12 +211,15 @@ static BOOL DSAInsertSection(UIView *sidebar) {
     BOOL fresh = (sec == nil);
     if (fresh) {
         sec = DSAMakeAgentSection(sidebar.backgroundColor);
+        // ★ 必须关掉自动约束：否则在纯约束容器里会生成与搜索框冲突的约束，
+        //   Auto Layout 会把搜索框撑高来化解（实测 49 → 219）
+        sec.translatesAutoresizingMaskIntoConstraints = NO;
         [host insertSubview:sec aboveSubview:list];
         objc_setAssociatedObject(host, &kDSASidebarSectionTag, sec, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     } else if (sec.superview != host) {
         [host insertSubview:sec aboveSubview:list];
     } else {
-        [host insertSubview:sec aboveSubview:list];   // 每次都重新压到列表之上
+        [host insertSubview:sec aboveSubview:list];
     }
 
     // ★ 定位只算一次：之后沿用。否则搜索框被推送拖走 → 目标跟着变 → 无限追（实测 listTop 一路涨到 2093）
