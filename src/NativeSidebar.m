@@ -12,7 +12,6 @@
 #import "AgentStore.h"
 
 static char kDSASidebarSectionTag;
-static char kDSABeforeInsetTag;    // 记录列表原始 contentInset.top，便于还原
 
 @interface DSAEntryProxy : NSObject
 + (void)tapped;
